@@ -40,6 +40,18 @@ print("hello, world!")
 5) Выбрать страну - РФ
 6) Нажать на зеленую кнопку и пройти капчу
 
+### Создать репозиторий
+1) Выбрать пункт создания репозитория
+<img width="250" height="328" alt="Screenshot 2025-11-25 at 23 02 34" src="https://github.com/user-attachments/assets/9aba401b-6cb6-4eb9-a8cc-39eed49d92d0" />
+
+2) Ввести корректное название
+<img width="273" height="81" alt="Screenshot 2025-11-25 at 23 03 03" src="https://github.com/user-attachments/assets/1dcf0f71-2307-45d7-a5c8-8d1f1ed09297" />
+
+3) Активировать readme
+<img width="713" height="65" alt="Screenshot 2025-11-25 at 23 04 01" src="https://github.com/user-attachments/assets/e8259b0b-efa6-4ffe-8b47-7f205aa0d3cd" />
+
+4) <img width="154" height="41" alt="Screenshot 2025-11-25 at 23 04 17" src="https://github.com/user-attachments/assets/83ec5f13-2492-4297-966d-f15698014ee5" />
+
 ### Поделится ключом
 1) Залогинится в github.com
 2) [Зайти в свои настройки](https://github.com/settings/personal-access-tokens)
