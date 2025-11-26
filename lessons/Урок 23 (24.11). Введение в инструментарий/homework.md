@@ -28,9 +28,7 @@ print("hello, world!")
 ## 3) Создать учетную запись github.com
 Задание для:
 - Татьяна
-- Владимир
-- Евгений
-- Марс
+- Евгений Д
 
 ### Регистрация
 1) [Зайти на страницу регистрации](https://github.com/signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F&source=header-home)
