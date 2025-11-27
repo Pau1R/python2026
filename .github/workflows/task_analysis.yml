@@ -13,7 +13,7 @@ on:
 
 jobs:
   analyze:
-    # if: github.event_name == 'workflow_call'
+    if: github.repository != 'Pau1R/python2026'
     runs-on: ubuntu-latest
 
     steps:
