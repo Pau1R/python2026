@@ -13,6 +13,7 @@ on:
 
 jobs:
   analyze:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -102,13 +103,27 @@ jobs:
             exit 0
           fi
 
+          TARGETS=()
+          while IFS= read -r PATH; do
+            [[ -z "$PATH" ]] && continue
+            if [[ "$PATH" == "$SOLUTION_DIR" || "$PATH" == "$SOLUTION_DIR"/* ]]; then
+              abs_path="$(realpath "$PATH")"
+              if [[ -f "$abs_path" ]]; then
+                TARGETS+=("$PATH")
+              fi
+            fi
+          done < <(printf "%s\n" "$CHANGED")
+
           {
             echo "skip=false"
             echo "mode=$MODE"
             echo "task=$TASK_NUM"
             echo "dir=$SOLUTION_DIR"
+            echo "solutions<<EOF"
+            printf "%s\n" "${MATCHED[@]}" | sort -u
+            echo "EOF"
             echo "files<<EOF"
-            printf "%s\n" "${MATCHED[@]}"
+            printf "%s\n" "${TARGETS[@]}" | sort -u
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -155,6 +170,9 @@ jobs:
             echo "solution<<EOF"
             while IFS= read -r FILE; do
               [[ -z "$FILE" ]] && continue
+              if [[ ! -f "$FILE" ]]; then
+                continue
+              fi
               echo "### $FILE"
               echo
               cat "$FILE"
@@ -219,10 +237,11 @@ jobs:
       - name: Copilot Task Analysis
         id: copilot
         if: steps.collect.outputs.skip != 'true'
-        uses: github/copilot-chat-action@v1
+        uses: github/copilot-actions@v1
         with:
-          prompt: ${{ steps.prompt.outputs.prompt }}
+          instructions: ${{ steps.prompt.outputs.prompt }}
           temperature: 0.1
+
 
       - name: Save report
         if: steps.collect.outputs.skip != 'true'
