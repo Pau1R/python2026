@@ -237,7 +237,7 @@ jobs:
       - name: Copilot Task Analysis
         id: copilot
         if: steps.collect.outputs.skip != 'true'
-        uses: github/copilot-cli@v1
+        uses: github/copilot-cli
         with:
           instructions: ${{ steps.prompt.outputs.prompt }}
           temperature: 0.1
