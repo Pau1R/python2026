@@ -135,6 +135,7 @@ jobs:
             echo "mode=$MODE"
             echo "task=$TASK"
             echo "dir=$SOLUTION_DIR"
+            echo "base=$BASE"
             printf 'solutions<<EOF\n%s\nEOF\n' "$(printf "%s\n" "${MATCHED[@]}" | sort -u)"
             printf 'files<<EOF\n%s\nEOF\n' "$(printf "%s\n" "${TARGETS[@]}" | sort -u)"
           } >> "$GITHUB_OUTPUT"
@@ -201,8 +202,19 @@ jobs:
         shell: bash
         env:
           REPORT: ${{ steps.meta.outputs.report }}
+          DESCRIPTION: ${{ steps.meta.outputs.description }}
+          BASE: ${{ steps.detect.outputs.base }}
         run: |
           set -euo pipefail
+
+          if [[ -n "$BASE" ]]; then
+            if git diff --diff-filter=A --name-only "$BASE" HEAD -- "$DESCRIPTION" | grep -q .; then
+              echo "Description file $DESCRIPTION is newly added. Skipping analysis."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
           if [[ -f "$REPORT" ]]; then
             echo "Report $REPORT already exists. Skipping analysis."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -294,72 +306,67 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PROMPT: ${{ steps.prompt.outputs.prompt }}
           TEMPERATURE: "0.1"
+        shell: python
         run: |
-          set -euo pipefail
+          import json
+          import os
+          import urllib.error
+          import urllib.request
 
-          if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
-            echo "Missing OPENROUTER_API_KEY secret." >&2
-            exit 1
-          fi
+          api_key = os.environ.get("OPENROUTER_API_KEY")
+          if not api_key:
+              raise SystemExit("Missing OPENROUTER_API_KEY secret.")
 
-          python <<'PY'
-            import json
-            import os
-            import urllib.error
-            import urllib.request
+          prompt = os.environ["PROMPT"]
+          temperature = float(os.environ.get("TEMPERATURE", "0.1"))
 
-            api_key = os.environ["OPENROUTER_API_KEY"]
-            prompt = os.environ["PROMPT"]
-            temperature = float(os.environ.get("TEMPERATURE", "0.1"))
+          payload = {
+              "model": "xai/grok-4.1-fast:free",
+              "messages": [
+                  {
+                      "role": "system",
+                      "content": (
+                          "You assist instructors by reviewing Python assignments. "
+                          "Return actionable, concise feedback."
+                      ),
+                  },
+                  {"role": "user", "content": prompt},
+              ],
+              "temperature": temperature,
+          }
 
-            payload = {
-                "model": "xai/grok-4.1-fast:free",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You assist instructors by reviewing Python assignments. "
-                            "Return actionable, concise feedback."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": temperature,
-            }
+          req = urllib.request.Request(
+              "https://openrouter.ai/api/v1/chat/completions",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {api_key}",
+                  "HTTP-Referer": "https://github.com/Pau1R/python2026",
+                  "X-Title": "Lesson Task Analysis Workflow",
+              },
+          )
 
-            req = urllib.request.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
-                    "HTTP-Referer": "https://github.com/Pau1R/python2026",
-                    "X-Title": "Lesson Task Analysis Workflow",
-                },
-            )
+          try:
+              with urllib.request.urlopen(req, timeout=90) as resp:
+                  body = resp.read()
+          except urllib.error.HTTPError as exc:
+              detail = exc.read().decode("utf-8", errors="replace")
+              raise SystemExit(f"OpenRouter request failed: {exc.code} {detail}")
+          except urllib.error.URLError as exc:
+              raise SystemExit(f"OpenRouter request failed: {exc.reason}")
 
-            try:
-                with urllib.request.urlopen(req, timeout=90) as resp:
-                    body = resp.read()
-            except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")
-                raise SystemExit(f"OpenRouter request failed: {exc.code} {detail}")
-            except urllib.error.URLError as exc:
-                raise SystemExit(f"OpenRouter request failed: {exc.reason}")
+          data = json.loads(body)
+          choices = data.get("choices") or []
+          if not choices:
+              raise SystemExit("OpenRouter response missing choices")
 
-            data = json.loads(body)
-            choices = data.get("choices") or []
-            if not choices:
-                raise SystemExit("OpenRouter response missing choices")
+          content = choices[0]["message"].get("content", "").rstrip()
 
-            content = choices[0]["message"].get("content", "").rstrip()
-
-            output_path = os.environ["GITHUB_OUTPUT"]
-            with open(output_path, "a", encoding="utf-8") as fh:
-                fh.write("response<<EOF\n")
-                fh.write(content)
-                fh.write("\nEOF\n")
-PY
+          output_path = os.environ["GITHUB_OUTPUT"]
+          with open(output_path, "a", encoding="utf-8") as fh:
+              fh.write("response<<EOF\n")
+              fh.write(content)
+              fh.write("\nEOF\n")
 
       - name: Save report locally
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
