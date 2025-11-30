@@ -60,8 +60,8 @@ jobs:
 
           mapfile -t NEW_SOLUTIONS < <(
             git diff --diff-filter=A --name-only "$BASE" HEAD -- \
-              'students/**/lessons/**/homework/**' \
-              'students/**/lessons/**/tasks/**' || true
+              'lessons/**/homework/**' \
+              'lessons/**/tasks/**' || true
           )
 
           if [[ "${#NEW_SOLUTIONS[@]}" -eq 0 ]]; then
@@ -76,10 +76,10 @@ jobs:
           declare -a MATCHED=()
           for PATH in "${NEW_SOLUTIONS[@]}"; do
             [[ -z "$PATH" ]] && continue
-            if [[ "$PATH" =~ ^students/.+/lessons/.+/homework/[^/]+homework\.py$ ]]; then
+            if [[ "$PATH" =~ ^lessons/.+/homework/[^/]+homework\.py$ ]]; then
               CURRENT_MODE="homework"
               CURRENT_TASK=""
-            elif [[ "$PATH" =~ ^students/.+/lessons/.+/tasks/.+/task_([0-9]{1,2})\.py$ ]]; then
+            elif [[ "$PATH" =~ ^lessons/.+/tasks/.+/task_([0-9]{1,2})\.py$ ]]; then
               CURRENT_MODE="task"
               CURRENT_TASK="${BASH_REMATCH[1]}"
             else
@@ -148,13 +148,23 @@ jobs:
           MODE: ${{ steps.detect.outputs.mode }}
           TASK: ${{ steps.detect.outputs.task }}
           DIR: ${{ steps.detect.outputs.dir }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          STUDENT="$(printf "%s" "$DIR" | cut -d/ -f2)"
-          LESSON_DIR="$(printf "%s" "$DIR" | cut -d/ -f4)"
-          if [[ -z "$STUDENT" || -z "$LESSON_DIR" ]]; then
-            echo "Unable to determine student or lesson from $DIR" >&2
+          STUDENT="${REPOSITORY#*/}"
+          if [[ -z "$STUDENT" ]]; then
+            STUDENT="shared"
+          fi
+
+          if [[ "$DIR" != lessons/* ]]; then
+            echo "Unexpected directory layout for $DIR" >&2
+            exit 1
+          fi
+
+          LESSON_DIR="$(printf "%s" "$DIR" | cut -d/ -f2)"
+          if [[ -z "$LESSON_DIR" ]]; then
+            echo "Unable to determine lesson from $DIR" >&2
             exit 1
           fi
 
@@ -164,13 +174,8 @@ jobs:
             LESSON_NUM="$LESSON_DIR"
           fi
 
-          RELATIVE_ROOT="students/${STUDENT}/lessons/"
-          if [[ "$DIR" != ${RELATIVE_ROOT}* ]]; then
-            echo "Unexpected layout for $DIR" >&2
-            exit 1
-          fi
+          REL_WITH_LESSON="${DIR#lessons/}"
 
-          REL_WITH_LESSON="${DIR#${RELATIVE_ROOT}}"
           REMOTE_DIR="lessons/$REL_WITH_LESSON"
 
           if [[ "$MODE" == "homework" ]]; then
