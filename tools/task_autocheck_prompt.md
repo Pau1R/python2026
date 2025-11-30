@@ -1,1 +1,1 @@
-prompt
+Check if the student's solution is correct.
