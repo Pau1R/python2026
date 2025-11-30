@@ -27,6 +27,7 @@ env:
   REPORT_AUTHOR_NAME: Lesson Bot
   REPORT_AUTHOR_EMAIL: lesson-bot@example.com
   TEMPLATE_URL: https://raw.githubusercontent.com/Pau1R/python2026/main/tools/task_autocheck_prompt.md
+  OPENROUTER_MODEL: x-ai/grok-4.1-fast:free
 
 jobs:
   analyze:
@@ -278,7 +279,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Compose Copilot prompt
+      - name: Compose prompt
         id: prompt
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         shell: bash
@@ -311,6 +312,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PROMPT: ${{ steps.prompt.outputs.prompt }}
           TEMPERATURE: "0.1"
+          MODEL: ${{ env.OPENROUTER_MODEL }}
         shell: python
         run: |
           import json
@@ -325,8 +327,10 @@ jobs:
           prompt = os.environ["PROMPT"]
           temperature = float(os.environ.get("TEMPERATURE", "0.1"))
 
+          model = os.environ.get("MODEL", "x-ai/grok-4.1-fast:free")
+
           payload = {
-              "model": "xai/grok-4.1-fast:free",
+              "model": model,
               "messages": [
                   {
                       "role": "system",
