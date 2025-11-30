@@ -388,6 +388,26 @@ jobs:
           printf "%s\n" "$RESPONSE" > "$REPORT"
           echo "Report saved to $REPORT"
 
+      - name: Commit report to student repo
+        if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
+        shell: bash
+        env:
+          REPORT: ${{ steps.meta.outputs.report }}
+          REPORT_NAME: ${{ steps.meta.outputs.report_name }}
+          REPORT_AUTHOR_NAME: ${{ env.REPORT_AUTHOR_NAME }}
+          REPORT_AUTHOR_EMAIL: ${{ env.REPORT_AUTHOR_EMAIL }}
+        run: |
+          set -euo pipefail
+          git config user.name "$REPORT_AUTHOR_NAME"
+          git config user.email "$REPORT_AUTHOR_EMAIL"
+          git add "$REPORT"
+          if git diff --cached --quiet; then
+            echo "No report changes to commit in student repo."
+            exit 0
+          fi
+          git commit -m "Add $REPORT_NAME"
+          git push
+
       - name: Upload analysis artifact
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
