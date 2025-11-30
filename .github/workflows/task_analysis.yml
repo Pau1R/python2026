@@ -74,19 +74,19 @@ jobs:
           TASK=""
           SOLUTION_DIR=""
           declare -a MATCHED=()
-          for PATH in "${NEW_SOLUTIONS[@]}"; do
-            [[ -z "$PATH" ]] && continue
-            if [[ "$PATH" =~ ^lessons/.+/homework/[^/]+homework\.py$ ]]; then
+          for FILE_PATH in "${NEW_SOLUTIONS[@]}"; do
+            [[ -z "$FILE_PATH" ]] && continue
+            if [[ "$FILE_PATH" =~ ^lessons/.+/homework/[^/]+homework\.py$ ]]; then
               CURRENT_MODE="homework"
               CURRENT_TASK=""
-            elif [[ "$PATH" =~ ^lessons/.+/tasks/.+/task_([0-9]{1,2})\.py$ ]]; then
+            elif [[ "$FILE_PATH" =~ ^lessons/.+/tasks/.+/task_([0-9]{1,2})\.py$ ]]; then
               CURRENT_MODE="task"
               CURRENT_TASK="${BASH_REMATCH[1]}"
             else
               continue
             fi
 
-            CURRENT_DIR="$(dirname "$PATH")"
+            CURRENT_DIR="$(dirname "$FILE_PATH")"
 
             if [[ -z "$MODE" ]]; then
               MODE="$CURRENT_MODE"
@@ -110,7 +110,7 @@ jobs:
               fi
             fi
 
-            MATCHED+=("$PATH")
+            MATCHED+=("$FILE_PATH")
           done
 
           if [[ "${#MATCHED[@]}" -eq 0 ]]; then
@@ -121,11 +121,11 @@ jobs:
 
           mapfile -t ALL_CHANGES < <(git diff --name-only "$BASE" HEAD || true)
           declare -a TARGETS=()
-          for FILE in "${ALL_CHANGES[@]}"; do
-            [[ -z "$FILE" ]] && continue
-            if [[ "$FILE" == "$SOLUTION_DIR" || "$FILE" == "$SOLUTION_DIR"/* ]]; then
-              if [[ -f "$FILE" ]]; then
-                TARGETS+=("$FILE")
+          for CHANGED_PATH in "${ALL_CHANGES[@]}"; do
+            [[ -z "$CHANGED_PATH" ]] && continue
+            if [[ "$CHANGED_PATH" == "$SOLUTION_DIR" || "$CHANGED_PATH" == "$SOLUTION_DIR"/* ]]; then
+              if [[ -f "$CHANGED_PATH" ]]; then
+                TARGETS+=("$CHANGED_PATH")
               fi
             fi
           done
