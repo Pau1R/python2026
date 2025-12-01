@@ -433,8 +433,13 @@ jobs:
         run: |
           set -euo pipefail
           DEST_DIR="teacher-tasks/$REMOTE_DIR"
+          DEST_PATH="$DEST_DIR/$REPORT_NAME"
           mkdir -p "$DEST_DIR"
-          cp "$SOURCE_REPORT" "$DEST_DIR/$REPORT_NAME"
+          if [[ -f "$DEST_PATH" ]]; then
+            echo "Teacher report $DEST_PATH already exists. Skipping copy to avoid overwriting."
+            exit 0
+          fi
+          cp "$SOURCE_REPORT" "$DEST_PATH"
 
       - name: Commit report to teacher repo
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
