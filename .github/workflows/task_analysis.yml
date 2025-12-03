@@ -210,6 +210,9 @@ jobs:
           REPORT: ${{ steps.meta.outputs.report }}
           DESCRIPTION: ${{ steps.meta.outputs.description }}
           BASE: ${{ steps.detect.outputs.base }}
+          REMOTE_DIR: ${{ steps.meta.outputs.remote_dir }}
+          REPORT_NAME: ${{ steps.meta.outputs.report_name }}
+          TASKS_REPO_TOKEN: ${{ secrets.TASKS_REPO_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -221,11 +224,38 @@ jobs:
             fi
           fi
 
-          if [[ -f "$REPORT" ]]; then
-            echo "Report $REPORT already exists. Skipping analysis."
+          if [[ -z "${TASKS_REPO_TOKEN:-}" ]]; then
+            echo "Missing TASKS_REPO_TOKEN secret." >&2
+            exit 1
+          fi
+
+          REMOTE_PATH="$REMOTE_DIR/$REPORT_NAME"
+          export REMOTE_PATH
+          ENCODED_REMOTE_PATH="$({
+            python - <<'PY'
+            import os
+            import urllib.parse
+
+            remote_path = os.environ["REMOTE_PATH"].split("/")
+            encoded = "/".join(urllib.parse.quote(part, safe="") for part in remote_path)
+            print(encoded)
+            PY
+          })"
+
+          API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/$ENCODED_REMOTE_PATH"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $TASKS_REPO_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$API_URL")
+
+          if [[ "$HTTP_STATUS" == "200" ]]; then
+            echo "Teacher report $REMOTE_PATH already exists. Skipping analysis."
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "$HTTP_STATUS" == "404" ]]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Failed to check teacher repo for $REMOTE_PATH (status $HTTP_STATUS)." >&2
+            exit 1
           fi
 
       - name: Read submission and description
@@ -327,49 +357,64 @@ jobs:
           prompt = os.environ["PROMPT"]
           temperature = float(os.environ.get("TEMPERATURE", "0.1"))
 
-          model = os.environ.get("MODEL", "x-ai/grok-4.1-fast:free")
+          primary_model = os.environ.get("MODEL", "x-ai/grok-4.1-fast:free")
+          fallback_model = "openai/gpt-oss-20b:free"
 
-          payload = {
-              "model": model,
-              "messages": [
-                  {
-                      "role": "system",
-                      "content": (
-                          "You assist instructors by reviewing Python assignments. "
-                          "Return actionable, concise feedback."
-                      ),
+          def call_openrouter(model: str) -> str:
+              payload = {
+                  "model": model,
+                  "messages": [
+                      {
+                          "role": "system",
+                          "content": (
+                              "You assist instructors by reviewing Python assignments. "
+                              "Return actionable, concise feedback."
+                          ),
+                      },
+                      {"role": "user", "content": prompt},
+                  ],
+                  "temperature": temperature,
+              }
+
+              req = urllib.request.Request(
+                  "https://openrouter.ai/api/v1/chat/completions",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "Content-Type": "application/json",
+                      "Authorization": f"Bearer {api_key}",
+                      "HTTP-Referer": "https://github.com/Pau1R/python2026",
+                      "X-Title": "Lesson Task Analysis Workflow",
                   },
-                  {"role": "user", "content": prompt},
-              ],
-              "temperature": temperature,
-          }
+              )
 
-          req = urllib.request.Request(
-              "https://openrouter.ai/api/v1/chat/completions",
-              data=json.dumps(payload).encode("utf-8"),
-              headers={
-                  "Content-Type": "application/json",
-                  "Authorization": f"Bearer {api_key}",
-                  "HTTP-Referer": "https://github.com/Pau1R/python2026",
-                  "X-Title": "Lesson Task Analysis Workflow",
-              },
-          )
+              try:
+                  with urllib.request.urlopen(req, timeout=90) as resp:
+                      body = resp.read()
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"OpenRouter request failed: {exc.code} {detail}")
+              except urllib.error.URLError as exc:
+                  raise RuntimeError(f"OpenRouter request failed: {exc.reason}")
 
-          try:
-              with urllib.request.urlopen(req, timeout=90) as resp:
-                  body = resp.read()
-          except urllib.error.HTTPError as exc:
-              detail = exc.read().decode("utf-8", errors="replace")
-              raise SystemExit(f"OpenRouter request failed: {exc.code} {detail}")
-          except urllib.error.URLError as exc:
-              raise SystemExit(f"OpenRouter request failed: {exc.reason}")
+              data = json.loads(body)
+              choices = data.get("choices") or []
+              if not choices:
+                  raise RuntimeError("OpenRouter response missing choices")
 
-          data = json.loads(body)
-          choices = data.get("choices") or []
-          if not choices:
-              raise SystemExit("OpenRouter response missing choices")
+              return choices[0]["message"].get("content", "").rstrip()
 
-          content = choices[0]["message"].get("content", "").rstrip()
+          errors = []
+          content = ""
+          for model in (primary_model, fallback_model):
+              try:
+                  content = call_openrouter(model)
+                  break
+              except RuntimeError as exc:
+                  errors.append(f"{model}: {exc}")
+
+          if not content:
+              message = "OpenRouter request failed for all models: " + " | ".join(errors)
+              raise SystemExit(message)
 
           output_path = os.environ["GITHUB_OUTPUT"]
           with open(output_path, "a", encoding="utf-8") as fh:
