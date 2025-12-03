@@ -77,17 +77,33 @@ jobs:
           declare -a MATCHED=()
           for FILE_PATH in "${NEW_SOLUTIONS[@]}"; do
             [[ -z "$FILE_PATH" ]] && continue
-            if [[ "$FILE_PATH" =~ ^lessons/.+/homework/[^/]+homework\.py$ ]]; then
+            CURRENT_MODE=""
+            CURRENT_TASK=""
+            CURRENT_DIR=""
+            if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework)(/|$) ]]; then
               CURRENT_MODE="homework"
-              CURRENT_TASK=""
-            elif [[ "$FILE_PATH" =~ ^lessons/.+/tasks/.+/task_([0-9]{1,2})\.py$ ]]; then
+              CURRENT_DIR="${BASH_REMATCH[1]}"
+            elif [[ "$FILE_PATH" =~ ^(lessons/[^/]+/tasks/[^/]+)(/|$) ]]; then
               CURRENT_MODE="task"
-              CURRENT_TASK="${BASH_REMATCH[1]}"
+              CURRENT_DIR="${BASH_REMATCH[1]}"
+              if [[ "$FILE_PATH" =~ task_([0-9]{1,2}) ]]; then
+                CURRENT_TASK="${BASH_REMATCH[1]}"
+              elif [[ "${CURRENT_DIR##*/}" =~ ([0-9]{1,2}) ]]; then
+                CURRENT_TASK="${BASH_REMATCH[1]}"
+              else
+                shopt -s nullglob
+                for DESC_FILE in "$CURRENT_DIR"/task_*.md; do
+                  BASENAME="$(basename "$DESC_FILE")"
+                  if [[ "$BASENAME" =~ task_([0-9]{1,2}) ]]; then
+                    CURRENT_TASK="${BASH_REMATCH[1]}"
+                    break
+                  fi
+                done
+                shopt -u nullglob
+              fi
             else
               continue
             fi
-
-            CURRENT_DIR="$(dirname "$FILE_PATH")"
 
             if [[ -z "$MODE" ]]; then
               MODE="$CURRENT_MODE"
@@ -99,7 +115,7 @@ jobs:
                 echo "skip=true" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
-              if [[ "$MODE" == "task" && "$TASK" != "$CURRENT_TASK" ]]; then
+              if [[ "$MODE" == "task" && -n "$TASK" && -n "$CURRENT_TASK" && "$TASK" != "$CURRENT_TASK" ]]; then
                 echo "Found several task numbers in the same push. Skipping analysis."
                 echo "skip=true" >> "$GITHUB_OUTPUT"
                 exit 0
@@ -108,6 +124,9 @@ jobs:
                 echo "Solution files live in different directories. Skipping analysis."
                 echo "skip=true" >> "$GITHUB_OUTPUT"
                 exit 0
+              fi
+              if [[ "$MODE" == "task" && -z "$TASK" && -n "$CURRENT_TASK" ]]; then
+                TASK="$CURRENT_TASK"
               fi
             fi
 
