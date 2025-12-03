@@ -200,10 +200,10 @@ jobs:
 
           if [[ "$MODE" == "homework" ]]; then
             DESCRIPTION="$DIR/homework.md"
-            REPORT_NAME="homework ${LESSON_NUM} ${STUDENT}.md"
+            REPORT_NAME="homework ${LESSON_NUM} ${STUDENT} result.md"
           else
             DESCRIPTION="$DIR/task_${TASK}.md"
-            REPORT_NAME="task ${LESSON_NUM}.${TASK} ${STUDENT}.md"
+            REPORT_NAME="task ${LESSON_NUM}.${TASK} ${STUDENT} result.md"
           fi
 
           REPORT_PATH="$DIR/$REPORT_NAME"
@@ -231,6 +231,7 @@ jobs:
           BASE: ${{ steps.detect.outputs.base }}
           REMOTE_DIR: ${{ steps.meta.outputs.remote_dir }}
           REPORT_NAME: ${{ steps.meta.outputs.report_name }}
+          REPORT_PATH: ${{ steps.meta.outputs.report }}
           TASKS_REPO_TOKEN: ${{ secrets.TASKS_REPO_TOKEN }}
         run: |
           set -euo pipefail
