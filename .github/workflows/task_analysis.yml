@@ -226,7 +226,8 @@ jobs:
           echo "[meta] Using DESCRIPTION: '$DESCRIPTION'"
 
           if [[ ! -f "$DESCRIPTION" ]]; then
-            echo "[meta] UTF-8 sanity check: locale = '$(locale | tr '\n' ' ')'")" >&2
+            LOCALE_STR="$(locale | tr '\n' ' ')"
+            echo "[meta] UTF-8 sanity check: locale = '$LOCALE_STR'" >&2
             echo "[meta] UTF-8 sanity check: creating and listing a temp file with Cyrillic name" >&2
             TMP_UTF8="/tmp/тест_utf8_$$.txt"
             printf "ok" > "$TMP_UTF8" 2>/dev/null || echo "[meta] Failed to create temp UTF-8 file $TMP_UTF8" >&2
