@@ -188,6 +188,9 @@ jobs:
           if [[ "$DIR" == \"*\" ]]; then
             DIR="${DIR#\"}"
             DIR="${DIR%\"}"
+          elif [[ "$DIR" == "'*'" ]]; then
+            DIR="${DIR#'}"
+            DIR="${DIR%'}"
           fi
 
           echo "[meta] Normalized DIR: '$DIR'"
