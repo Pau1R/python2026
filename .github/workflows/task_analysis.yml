@@ -82,6 +82,8 @@ jobs:
               FILE_PATH="${FILE_PATH#\"}"
               FILE_PATH="${FILE_PATH%\"}"
             fi
+            # Normalize any C-style escaped bytes (e.g. \320\232) back to raw bytes using printf
+            FILE_PATH="$(printf '%b' "$FILE_PATH")"
             CURRENT_MODE=""
             CURRENT_TASK=""
             CURRENT_DIR=""
