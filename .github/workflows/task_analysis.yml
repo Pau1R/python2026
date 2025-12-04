@@ -182,6 +182,12 @@ jobs:
             STUDENT="shared"
           fi
 
+          # Normalize DIR in case it is quoted
+          if [[ "$DIR" == "*" ]]; then
+            DIR="${DIR#"}"
+            DIR="${DIR%"}"
+          fi
+
           if [[ "$DIR" != lessons/* ]]; then
             echo "Unexpected directory layout for $DIR" >&2
             exit 1
