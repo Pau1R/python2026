@@ -26,7 +26,7 @@ on:
 env:
   REPORT_AUTHOR_NAME: Lesson Bot
   REPORT_AUTHOR_EMAIL: lesson-bot@example.com
-  TEMPLATE_URL: https://raw.githubusercontent.com/Pau1R/python2026/main/tools/task_autocheck_prompt.md
+  TEMPLATE_URL: https://raw.githubusercontent.com/Pau1R/python2026/main/misc/task_autocheck_prompt.md
   OPENROUTER_MODEL: x-ai/grok-4.1-fast:free
 
 jobs:
@@ -59,11 +59,18 @@ jobs:
             BASE="$(git rev-list --max-parents=0 HEAD)"
           fi
 
+          echo "[detect] BASE commit: $BASE"
+
           mapfile -t NEW_SOLUTIONS < <(
             git diff --diff-filter=A --name-only "$BASE" HEAD -- \
               'lessons/**/homework/**' \
               'lessons/**/tasks/**' || true
           )
+
+          echo "[detect] Raw newly added candidate files:"
+          for f in "${NEW_SOLUTIONS[@]}"; do
+            echo "[detect]   - '$f'"
+          done
 
           if [[ "${#NEW_SOLUTIONS[@]}" -eq 0 ]]; then
             echo "No newly added solution files detected. Skipping analysis."
@@ -77,6 +84,7 @@ jobs:
           declare -a MATCHED=()
           for FILE_PATH in "${NEW_SOLUTIONS[@]}"; do
             [[ -z "$FILE_PATH" ]] && continue
+            echo "[detect] Inspecting '$FILE_PATH'"
             CURRENT_MODE=""
             CURRENT_TASK=""
             CURRENT_DIR=""
@@ -101,7 +109,9 @@ jobs:
                 done
                 shopt -u nullglob
               fi
+              echo "[detect] Classified as task: DIR='$CURRENT_DIR' TASK='${CURRENT_TASK:-}'"
             else
+              echo "[detect]   -> does not match homework/tasks pattern, skipping"
               continue
             fi
 
@@ -134,6 +144,7 @@ jobs:
           done
 
           if [[ "${#MATCHED[@]}" -eq 0 ]]; then
+            echo "[detect] No FILE_PATH entries passed classification. MATCHED is empty."
             echo "No valid solution files detected. Skipping analysis."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
