@@ -184,15 +184,11 @@ jobs:
             STUDENT="shared"
           fi
 
-          echo "[meta] Raw DIR: '$DIR'"
-
           # Normalize DIR in case it is quoted
           if [[ "$DIR" == \"*\" ]]; then
             DIR="${DIR#\"}"
             DIR="${DIR%\"}"
           fi
-
-          echo "[meta] Normalized DIR: '$DIR'"
 
           if [[ "$DIR" != lessons/* ]]; then
             echo "Unexpected directory layout for $DIR" >&2
@@ -225,23 +221,7 @@ jobs:
 
           REPORT_PATH="$DIR/$REPORT_NAME"
 
-          echo "[meta] Using DESCRIPTION: '$DESCRIPTION'"
-
           if [[ ! -f "$DESCRIPTION" ]]; then
-            LOCALE_STR="$(locale | tr '\n' ' ')"
-            echo "[meta] UTF-8 sanity check: locale = '$LOCALE_STR'" >&2
-            echo "[meta] UTF-8 sanity check: creating and listing a temp file with Cyrillic name" >&2
-            TMP_UTF8="/tmp/тест_utf8_$$.txt"
-            printf "ok" > "$TMP_UTF8" 2>/dev/null || echo "[meta] Failed to create temp UTF-8 file $TMP_UTF8" >&2
-            ls -la /tmp | head -n 20 >&2 || echo "[meta] Failed to list /tmp" >&2
-            echo "[meta] DESCRIPTION does not exist according to -f check" >&2
-            echo "[meta] pwd: $(pwd)" >&2
-            echo "[meta] Listing contents of lesson dir: 'lessons'" >&2
-            ls -la lessons || echo "[meta] ls lessons failed" >&2
-            echo "[meta] Listing contents of lesson subdir: '$(printf "%s" "$LESSON_DIR")'" >&2
-            ls -la "lessons/$LESSON_DIR" || echo "[meta] ls lessons/$LESSON_DIR failed" >&2
-            echo "[meta] Listing contents of DIR: '$DIR'" >&2
-            ls -la "$DIR" || echo "[meta] ls $DIR failed" >&2
             echo "Expected description file $DESCRIPTION not found." >&2
             exit 1
           fi
