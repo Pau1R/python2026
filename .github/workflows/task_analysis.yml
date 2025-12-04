@@ -183,9 +183,9 @@ jobs:
           fi
 
           # Normalize DIR in case it is quoted
-          if [[ "$DIR" == "*" ]]; then
-            DIR="${DIR#"}"
-            DIR="${DIR%"}"
+          if [[ "$DIR" == \"*\" ]]; then
+            DIR="${DIR#\"}"
+            DIR="${DIR%\"}"
           fi
 
           if [[ "$DIR" != lessons/* ]]; then
