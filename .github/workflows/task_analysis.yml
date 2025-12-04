@@ -182,11 +182,15 @@ jobs:
             STUDENT="shared"
           fi
 
+          echo "[meta] Raw DIR: '$DIR'"
+
           # Normalize DIR in case it is quoted
           if [[ "$DIR" == \"*\" ]]; then
             DIR="${DIR#\"}"
             DIR="${DIR%\"}"
           fi
+
+          echo "[meta] Normalized DIR: '$DIR'"
 
           if [[ "$DIR" != lessons/* ]]; then
             echo "Unexpected directory layout for $DIR" >&2
@@ -218,6 +222,8 @@ jobs:
           fi
 
           REPORT_PATH="$DIR/$REPORT_NAME"
+
+          echo "[meta] Using DESCRIPTION: '$DESCRIPTION'"
 
           if [[ ! -f "$DESCRIPTION" ]]; then
             echo "Expected description file $DESCRIPTION not found." >&2
