@@ -84,7 +84,12 @@ jobs:
           declare -a MATCHED=()
           for FILE_PATH in "${NEW_SOLUTIONS[@]}"; do
             [[ -z "$FILE_PATH" ]] && continue
-            echo "[detect] Inspecting '$FILE_PATH'"
+            RAW_PATH="$FILE_PATH"
+            if [[ "$FILE_PATH" == \"*\" ]]; then
+              FILE_PATH="${FILE_PATH#\"}"
+              FILE_PATH="${FILE_PATH%\"}"
+            fi
+            echo "[detect] Inspecting raw='$RAW_PATH' normalized='$FILE_PATH'"
             CURRENT_MODE=""
             CURRENT_TASK=""
             CURRENT_DIR=""
