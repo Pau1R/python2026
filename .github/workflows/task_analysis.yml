@@ -216,6 +216,8 @@ jobs:
             OWNER="shared"
           fi
 
+          echo "DEBUG META: OWNER='$OWNER', REPO_NAME='$REPO_NAME'" >&2
+
           STUDENT="$OWNER"
 
           NAME_MAPPING_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/students/name_mapping.md"
@@ -229,21 +231,34 @@ jobs:
             )"
 
             if [[ -n "$MAP_CONTENT" ]]; then
+              echo "DEBUG META: mapping file loaded" >&2
               while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
                 [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
+                echo "DEBUG META: raw line: '$line'" >&2
+
                 if [[ "$line" =~ ^[[:space:]]*([^|[:space:]]+)[[:space:]]*\|[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]]; then
                   SHORT_NAME="${BASH_REMATCH[1]}"
                   GITHUB_NAME="${BASH_REMATCH[2]}"
+
+                  echo "DEBUG META: parsed SHORT_NAME='$SHORT_NAME', GITHUB_NAME='$GITHUB_NAME'" >&2
+
                   if [[ "$GITHUB_NAME" == "$OWNER" ]]; then
+                    echo "DEBUG META: MATCH. OWNER='$OWNER' mapped to STUDENT='$SHORT_NAME'" >&2
                     STUDENT="$SHORT_NAME"
                     break
                   fi
+                else
+                  echo "DEBUG META: line did not match mapping regex" >&2
                 fi
               done <<< "$MAP_CONTENT"
+            else
+              echo "DEBUG META: mapping file is empty or could not be fetched" >&2
             fi
           fi
+
+          echo "DEBUG META: final STUDENT='$STUDENT'" >&2
 
           DIR_STRIPPED="$DIR"
           DIR_STRIPPED="${DIR_STRIPPED%\"}"
