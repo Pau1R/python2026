@@ -215,7 +215,7 @@ jobs:
             DESCRIPTION="$DIR/homework.md"
             REPORT_NAME="homework ${LESSON_NUM} ${STUDENT} result.md"
           else
-            DESCRIPTION="$DIR/task_${TASK}.md"
+            DESCRIPTION="$DIR/task ${LESSON_NUM}.${TASK} ${STUDENT}.md"
             REPORT_NAME="task ${LESSON_NUM}.${TASK} ${STUDENT} result.md"
           fi
 
