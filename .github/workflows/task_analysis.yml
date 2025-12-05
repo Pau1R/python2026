@@ -179,10 +179,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          STUDENT="${REPOSITORY#*/}"
-          if [[ -z "$STUDENT" ]]; then
-            STUDENT="shared"
+          REPO_NAME="${REPOSITORY#*/}"
+          if [[ -z "$REPO_NAME" ]]; then
+            REPO_NAME="shared"
           fi
+
+          # STUDENT will initially be the repo name; it may be overridden later
+          STUDENT="$REPO_NAME"
 
           # Normalize DIR in case it is quoted
           if [[ "$DIR" == \"*\" ]]; then
@@ -232,6 +235,7 @@ jobs:
             echo "report_name=$REPORT_NAME"
             echo "remote_dir=$REMOTE_DIR"
             echo "student=$STUDENT"
+            echo "repo_name=$REPO_NAME"
           } >> "$GITHUB_OUTPUT"
 
       - name: Guard against existing report
@@ -491,6 +495,37 @@ jobs:
           repository: Pau1R/python2026_tasks
           token: ${{ secrets.TASKS_REPO_TOKEN }}
           path: teacher-tasks
+
+      - name: Resolve display student name from mapping
+        id: name_map
+        if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
+        shell: bash
+        env:
+          REPO_NAME: ${{ steps.meta.outputs.repo_name }}
+        run: |
+          set -euo pipefail
+
+          DISPLAY_NAME="$REPO_NAME"
+
+          MAPPING_FILE="teacher-tasks/students/name_mapping.md"
+          if [[ -f "$MAPPING_FILE" ]]; then
+            # Expected format per non-empty, non-comment line:
+            # repo_name | Display Name
+            while IFS= read -r LINE; do
+              [[ -z "$LINE" ]] && continue
+              [[ "$LINE" =~ ^[[:space:]]*# ]] && continue
+              if [[ "$LINE" =~ ^[[:space:]]*([^|[:space:]]+)[[:space:]]*\|[[:space:]]*(.+)[[:space:]]*$ ]]; then
+                KEY="${BASH_REMATCH[1]}"
+                VALUE="${BASH_REMATCH[2]}"
+                if [[ "$KEY" == "$REPO_NAME" ]]; then
+                  DISPLAY_NAME="$VALUE"
+                  break
+                fi
+              fi
+            done < "$MAPPING_FILE"
+          fi
+
+          echo "student_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Copy report to teacher repo
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
