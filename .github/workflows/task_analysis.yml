@@ -174,12 +174,10 @@ jobs:
           mapfile -t ALL_CHANGES < <(git diff --name-only "$BASE" HEAD || true)
 
           declare -a TARGETS=()
-          for CHANGED_PATH in "${ALL_CHANGES[@]}"; do
-            [[ -z "$CHANGED_PATH" ]] && continue
-            if [[ "$CHANGED_PATH" == "$SOLUTION_DIR" || "$CHANGED_PATH" == "$SOLUTION_DIR"/* ]]; then
-              if [[ -f "$CHANGED_PATH" ]]; then
-                TARGETS+=("$CHANGED_PATH")
-              fi
+          for FILE_PATH in "${MATCHED[@]}"; do
+            [[ -z "$FILE_PATH" ]] && continue
+            if [[ -f "$FILE_PATH" ]]; then
+              TARGETS+=("$FILE_PATH")
             fi
           done
 
