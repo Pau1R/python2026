@@ -323,15 +323,9 @@ jobs:
           fi
 
           if [[ "$SKIP" == "false" ]]; then
-            REMOTE_PATH="${REMOTE_DIR%/}/$REPORT_NAME"
-
-            ENCODED_REMOTE_PATH="$(
-              REMOTE_PATH="$REMOTE_PATH" python - << 'PY'
-              import os, urllib.parse
-              path = os.environ.get("REMOTE_PATH", "")
-              print(urllib.parse.quote(path))
-              PY
-            )"
+            REMOTE_PATH="$REMOTE_DIR/$REPORT_NAME"
+            export REMOTE_PATH
+            ENCODED_REMOTE_PATH="$(python -c "import os, urllib.parse; remote_path = os.environ['REMOTE_PATH'].split('/'); encoded = '/'.join(urllib.parse.quote(part, safe='') for part in remote_path); print(encoded)")"
 
             API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/${ENCODED_REMOTE_PATH}"
 
