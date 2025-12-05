@@ -411,8 +411,7 @@ jobs:
 
           {
             echo 'body<<EOF'
-            printf '%s
-' "$BODY"
+            printf '%s\n' "$BODY"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
