@@ -3,18 +3,17 @@ name: Lesson Task Analysis
 on:
   push:
     paths:
-      - "students/**/lessons/**/homework/**"
-      - "students/**/lessons/**/tasks/**"
+      - 'lessons/**/homework/**'
+      - 'lessons/**/tasks/**'
   workflow_dispatch:
     inputs:
       base_sha:
-        description: Optional base commit SHA to diff against
+        description: 'Optional base commit SHA for diff'
         required: false
         type: string
   workflow_call:
     inputs:
       base_sha:
-        description: Optional base commit SHA to diff against
         required: false
         type: string
     secrets:
@@ -31,6 +30,7 @@ env:
 
 jobs:
   analyze:
+    name: analyze
     if: github.repository != 'Pau1R/python2026'
     runs-on: ubuntu-latest
     permissions:
@@ -51,109 +51,133 @@ jobs:
         run: |
           set -euo pipefail
 
-          BASE="$INPUT_BASE_SHA"
-          if [[ -z "$BASE" ]]; then
+          echo "Detecting submission files"
+
+          INPUT_BASE_SHA="${INPUT_BASE_SHA:-}"
+          EVENT_BEFORE="${EVENT_BEFORE:-}"
+
+          ZERO_SHA="0000000000000000000000000000000000000000"
+
+          BASE=""
+          if [[ -n "$INPUT_BASE_SHA" ]]; then
+            BASE="$INPUT_BASE_SHA"
+          elif [[ -n "$EVENT_BEFORE" && "$EVENT_BEFORE" != "$ZERO_SHA" ]]; then
             BASE="$EVENT_BEFORE"
-          fi
-          if [[ -z "$BASE" || "$BASE" == "0000000000000000000000000000000000000000" ]]; then
-            BASE="$(git rev-list --max-parents=0 HEAD)"
+          else
+            BASE="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
           fi
 
-          mapfile -t NEW_SOLUTIONS < <(
+          echo "Resolved BASE=$BASE"
+
+          mapfile -t NEW_SOLUTIONS < <(\
             git diff --diff-filter=A --name-only "$BASE" HEAD -- \
               'lessons/**/homework/**' \
-              'lessons/**/tasks/**' || true
+              'lessons/**/tasks/**' \
+            | sort -u
           )
 
-          if [[ "${#NEW_SOLUTIONS[@]}" -eq 0 ]]; then
-            echo "No newly added solution files detected. Skipping analysis."
+          if (( ${#NEW_SOLUTIONS[@]} == 0 )); then
+            echo "No newly added solutions found. Skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           MODE=""
-          TASK=""
           SOLUTION_DIR=""
-          declare -a MATCHED=()
-          for FILE_PATH in "${NEW_SOLUTIONS[@]}"; do
-            [[ -z "$FILE_PATH" ]] && continue
-            RAW_PATH="$FILE_PATH"
-            if [[ "$FILE_PATH" == \"*\" ]]; then
-              FILE_PATH="${FILE_PATH#\"}"
-              FILE_PATH="${FILE_PATH%\"}"
-            fi
-            # Normalize any C-style escaped bytes (e.g. \320\232) back to raw bytes using printf
-            FILE_PATH="$(printf '%b' "$FILE_PATH")"
+          TASK=""
+
+          for RAW_PATH in "${NEW_SOLUTIONS[@]}"; do
+            FILE_PATH="$(printf '%b' "$RAW_PATH")"
+
+            IFS='/' read -r p1 p2 p3 p4 _ <<<"$FILE_PATH"
+
             CURRENT_MODE=""
-            CURRENT_TASK=""
             CURRENT_DIR=""
-            if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework)(/|$) ]]; then
+            CURRENT_TASK=""
+
+            if [[ "$p1" == "lessons" && "$p3" == "homework" ]]; then
               CURRENT_MODE="homework"
-              CURRENT_DIR="${BASH_REMATCH[1]}"
-            elif [[ "$FILE_PATH" =~ ^(lessons/[^/]+/tasks/[^/]+)(/|$) ]]; then
+              CURRENT_DIR="$p1/$p2/$p3"
+            elif [[ "$p1" == "lessons" && "$p3" == "tasks" ]]; then
               CURRENT_MODE="task"
-              CURRENT_DIR="${BASH_REMATCH[1]}"
-              if [[ "$FILE_PATH" =~ task_([0-9]{1,2}) ]]; then
-                CURRENT_TASK="${BASH_REMATCH[1]}"
-              elif [[ "${CURRENT_DIR##*/}" =~ ([0-9]{1,2}) ]]; then
-                CURRENT_TASK="${BASH_REMATCH[1]}"
-              else
-                shopt -s nullglob
-                for DESC_FILE in "$CURRENT_DIR"/task_*.md; do
-                  BASENAME="$(basename "$DESC_FILE")"
-                  if [[ "$BASENAME" =~ task_([0-9]{1,2}) ]]; then
-                    CURRENT_TASK="${BASH_REMATCH[1]}"
-                    break
-                  fi
-                done
-                shopt -u nullglob
-              fi
+              CURRENT_DIR="$p1/$p2/$p3/$p4"
             else
+              # Not a recognized pattern. Skip this file.
               continue
+            fi
+
+            if [[ "$CURRENT_MODE" == "task" ]]; then
+              filename="${FILE_PATH##*/}"
+              if [[ "$filename" =~ ^task_([0-9]{1,2})\.md$ ]]; then
+                CURRENT_TASK="${BASH_REMATCH[1]}"
+              fi
+
+              if [[ -z "$CURRENT_TASK" ]]; then
+                last_component="${CURRENT_DIR##*/}"
+                if [[ "$last_component" =~ ^[0-9]{1,2}$ ]]; then
+                  CURRENT_TASK="$last_component"
+                fi
+              fi
+
+              if [[ -z "$CURRENT_TASK" && -d "$CURRENT_DIR" ]]; then
+                first_task_file="$(ls "$CURRENT_DIR"/task_*.md 2>/dev/null | head -n 1 || true)"
+                if [[ -n "$first_task_file" ]]; then
+                  base_name="${first_task_file##*/}"
+                  if [[ "$base_name" =~ ^task_([0-9]{1,2})\.md$ ]]; then
+                    CURRENT_TASK="${BASH_REMATCH[1]}"
+                  fi
+                fi
+              fi
+
+              if [[ -z "$CURRENT_TASK" ]]; then
+                echo "Could not determine task number for $FILE_PATH. Skipping run." >&2
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
             fi
 
             if [[ -z "$MODE" ]]; then
               MODE="$CURRENT_MODE"
-              TASK="$CURRENT_TASK"
-              SOLUTION_DIR="$CURRENT_DIR"
-            else
-              if [[ "$MODE" != "$CURRENT_MODE" ]]; then
-                echo "Found both homework and task submissions. Skipping analysis."
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              if [[ "$MODE" == "task" && -n "$TASK" && -n "$CURRENT_TASK" && "$TASK" != "$CURRENT_TASK" ]]; then
-                echo "Found several task numbers in the same push. Skipping analysis."
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              if [[ "$SOLUTION_DIR" != "$CURRENT_DIR" ]]; then
-                echo "Solution files live in different directories. Skipping analysis."
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              if [[ "$MODE" == "task" && -z "$TASK" && -n "$CURRENT_TASK" ]]; then
+            elif [[ "$MODE" != "$CURRENT_MODE" ]]; then
+              echo "Mixed modes detected (homework and task). Skipping run." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if [[ "$MODE" == "task" ]]; then
+              if [[ -z "$TASK" ]]; then
                 TASK="$CURRENT_TASK"
+              elif [[ "$TASK" != "$CURRENT_TASK" ]]; then
+                echo "Multiple task numbers detected ($TASK vs $CURRENT_TASK). Skipping run." >&2
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
               fi
             fi
 
-            MATCHED+=("$FILE_PATH")
+            if [[ -z "$SOLUTION_DIR" ]]; then
+              SOLUTION_DIR="$CURRENT_DIR"
+            elif [[ "$SOLUTION_DIR" != "$CURRENT_DIR" ]]; then
+              echo "Multiple solution directories detected ($SOLUTION_DIR vs $CURRENT_DIR). Skipping run." >&2
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           done
 
-          if [[ "${#MATCHED[@]}" -eq 0 ]]; then
-            echo "No valid solution files detected. Skipping analysis."
+          if [[ -z "$MODE" || -z "$SOLUTION_DIR" ]]; then
+            echo "No valid solution directory detected. Skipping run." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          mapfile -t ALL_CHANGES < <(git diff --name-only "$BASE" HEAD || true)
-          declare -a TARGETS=()
-          for CHANGED_PATH in "${ALL_CHANGES[@]}"; do
-            [[ -z "$CHANGED_PATH" ]] && continue
-            if [[ "$CHANGED_PATH" == "$SOLUTION_DIR" || "$CHANGED_PATH" == "$SOLUTION_DIR"/* ]]; then
-              if [[ -f "$CHANGED_PATH" ]]; then
-                TARGETS+=("$CHANGED_PATH")
-              fi
+          echo "Detected MODE=$MODE, TASK=$TASK, SOLUTION_DIR=$SOLUTION_DIR"
+
+          mapfile -t ALL_CHANGES < <(git diff --name-only "$BASE" HEAD | sort -u)
+
+          TARGETS=()
+          for RAW_PATH in "${ALL_CHANGES[@]}"; do
+            FILE_PATH="$(printf '%b' "$RAW_PATH")"
+            if [[ "$FILE_PATH" == "$SOLUTION_DIR"* && -f "$FILE_PATH" ]]; then
+              TARGETS+=("$FILE_PATH")
             fi
           done
 
@@ -163,8 +187,18 @@ jobs:
             echo "task=$TASK"
             echo "dir=$SOLUTION_DIR"
             echo "base=$BASE"
-            printf 'solutions<<EOF\n%s\nEOF\n' "$(printf "%s\n" "${MATCHED[@]}" | sort -u)"
-            printf 'files<<EOF\n%s\nEOF\n' "$(printf "%s\n" "${TARGETS[@]}" | sort -u)"
+
+            echo 'solutions<<EOF'
+            for p in "${NEW_SOLUTIONS[@]}"; do
+              printf '%s\n' "$p"
+            done | sort -u
+            echo 'EOF'
+
+            echo 'files<<EOF'
+            for p in "${TARGETS[@]}"; do
+              printf '%s\n' "$p"
+            done | sort -u
+            echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Resolve lesson metadata
@@ -188,43 +222,45 @@ jobs:
 
           STUDENT="$OWNER"
 
-          API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/students/name_mapping.md"
-          MAP_CONTENT=""
+          NAME_MAPPING_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/students/name_mapping.md"
+
           if [[ -n "${TASKS_REPO_TOKEN:-}" ]]; then
-            MAP_CONTENT="$(curl -fsSL \
-              -H "Authorization: Bearer $TASKS_REPO_TOKEN" \
-              -H "Accept: application/vnd.github.raw" \
-              "$API_URL" 2>/dev/null || true)"
-          fi
-          if [[ -n "$MAP_CONTENT" ]]; then
-            while IFS= read -r LINE; do
-              [[ -z "$LINE" ]] && continue
-              [[ "$LINE" =~ ^[[:space:]]*# ]] && continue
-              if [[ "$LINE" =~ ^[[:space:]]*([^|[:space:]]+)[[:space:]]*\|[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]]; then
-                SHORT_NAME="${BASH_REMATCH[1]}"
-                GITHUB_NAME="${BASH_REMATCH[2]}"
-                if [[ "$GITHUB_NAME" == "$OWNER" ]]; then
-                  STUDENT="$SHORT_NAME"
-                  break
+            MAP_CONTENT="$(
+              curl -fsSL \
+                -H "Authorization: Bearer $TASKS_REPO_TOKEN" \
+                -H "Accept: application/vnd.github.raw" \
+                "$NAME_MAPPING_URL" 2>/dev/null || true
+            )"
+
+            if [[ -n "$MAP_CONTENT" ]]; then
+              while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+                if [[ "$line" =~ ^[[:space:]]*([^|[:space:]]+)[[:space:]]*\|[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]]; then
+                  SHORT_NAME="${BASH_REMATCH[1]}"
+                  GITHUB_NAME="${BASH_REMATCH[2]}"
+                  if [[ "$GITHUB_NAME" == "$OWNER" ]]; then
+                    STUDENT="$SHORT_NAME"
+                    break
+                  fi
                 fi
-              fi
-            done <<< "$MAP_CONTENT"
+              done <<< "$MAP_CONTENT"
+            fi
           fi
 
-          # Normalize DIR in case it is quoted
-          if [[ "$DIR" == \"*\" ]]; then
-            DIR="${DIR#\"}"
-            DIR="${DIR%\"}"
-          fi
+          DIR_STRIPPED="$DIR"
+          DIR_STRIPPED="${DIR_STRIPPED%\"}"
+          DIR_STRIPPED="${DIR_STRIPPED#\"}"
 
-          if [[ "$DIR" != lessons/* ]]; then
-            echo "Unexpected directory layout for $DIR" >&2
+          if [[ "$DIR_STRIPPED" != lessons/* ]]; then
+            echo "DIR must start with lessons/: $DIR_STRIPPED" >&2
             exit 1
           fi
 
-          LESSON_DIR="$(printf "%s" "$DIR" | cut -d/ -f2)"
+          LESSON_DIR="$(printf '%s' "$DIR_STRIPPED" | cut -d/ -f2)"
           if [[ -z "$LESSON_DIR" ]]; then
-            echo "Unable to determine lesson from $DIR" >&2
+            echo "Could not determine LESSON_DIR from DIR=$DIR_STRIPPED" >&2
             exit 1
           fi
 
@@ -234,22 +270,24 @@ jobs:
             LESSON_NUM="$LESSON_DIR"
           fi
 
-          REL_WITH_LESSON="${DIR#lessons/}"
-
+          REL_WITH_LESSON="${DIR_STRIPPED#lessons/}"
           REMOTE_DIR="lessons/$REL_WITH_LESSON"
 
           if [[ "$MODE" == "homework" ]]; then
-            DESCRIPTION="$DIR/homework.md"
+            DESCRIPTION="$DIR_STRIPPED/homework.md"
             REPORT_NAME="homework ${LESSON_NUM} ${STUDENT} result.md"
-          else
-            DESCRIPTION="$DIR/task ${LESSON_NUM}.${TASK} ${STUDENT}.md"
+          elif [[ "$MODE" == "task" ]]; then
+            DESCRIPTION="$DIR_STRIPPED/task ${LESSON_NUM}.${TASK} ${STUDENT}.md"
             REPORT_NAME="task ${LESSON_NUM}.${TASK} ${STUDENT} result.md"
+          else
+            echo "Unknown MODE: $MODE" >&2
+            exit 1
           fi
 
-          REPORT_PATH="$DIR/$REPORT_NAME"
+          REPORT_PATH="$DIR_STRIPPED/$REPORT_NAME"
 
           if [[ ! -f "$DESCRIPTION" ]]; then
-            echo "Expected description file $DESCRIPTION not found." >&2
+            echo "Description file does not exist: $DESCRIPTION" >&2
             exit 1
           fi
 
@@ -273,42 +311,60 @@ jobs:
           BASE: ${{ steps.detect.outputs.base }}
           REMOTE_DIR: ${{ steps.meta.outputs.remote_dir }}
           REPORT_NAME: ${{ steps.meta.outputs.report_name }}
-          REPORT_PATH: ${{ steps.meta.outputs.report }}
           TASKS_REPO_TOKEN: ${{ secrets.TASKS_REPO_TOKEN }}
         run: |
           set -euo pipefail
 
-          if [[ -n "$BASE" ]]; then
+          SKIP="false"
+
+          if [[ -n "${BASE:-}" ]]; then
             if git diff --diff-filter=A --name-only "$BASE" HEAD -- "$DESCRIPTION" | grep -q .; then
-              echo "Description file $DESCRIPTION is newly added. Skipping analysis."
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
+              echo "Description file is newly added. Skipping analysis."
+              SKIP="true"
             fi
           fi
 
           if [[ -z "${TASKS_REPO_TOKEN:-}" ]]; then
-            echo "Missing TASKS_REPO_TOKEN secret." >&2
+            echo "TASKS_REPO_TOKEN is required" >&2
             exit 1
           fi
 
-          REMOTE_PATH="$REMOTE_DIR/$REPORT_NAME"
-          export REMOTE_PATH
-          ENCODED_REMOTE_PATH="$(python -c "import os, urllib.parse; remote_path = os.environ['REMOTE_PATH'].split('/'); encoded = '/'.join(urllib.parse.quote(part, safe='') for part in remote_path); print(encoded)")"
+          if [[ "$SKIP" == "false" ]]; then
+            REMOTE_PATH="${REMOTE_DIR%/}/$REPORT_NAME"
 
-          API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/$ENCODED_REMOTE_PATH"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $TASKS_REPO_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$API_URL")
+            ENCODED_REMOTE_PATH="$(
+              REMOTE_PATH="$REMOTE_PATH" python - << 'PY'
+import os, urllib.parse
+path = os.environ.get("REMOTE_PATH", "")
+print(urllib.parse.quote(path))
+PY
+            )"
 
-          if [[ "$HTTP_STATUS" == "200" ]]; then
-            echo "Teacher report $REMOTE_PATH already exists. Skipping analysis."
+            API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/${ENCODED_REMOTE_PATH}"
+
+            STATUS="$(
+              curl -sS -o /tmp/teacher_report_check.json -w "%{http_code}" \
+                -H "Authorization: Bearer ${TASKS_REPO_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "$API_URL"
+            )"
+
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Teacher report already exists in python2026_tasks. Skipping analysis."
+              SKIP="true"
+            elif [[ "$STATUS" == "404" ]]; then
+              :
+            else
+              echo "Unexpected status from GitHub API when checking teacher report: $STATUS" >&2
+              cat /tmp/teacher_report_check.json >&2 || true
+              exit 1
+            fi
+          fi
+
+          if [[ "$SKIP" == "true" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$HTTP_STATUS" == "404" ]]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Failed to check teacher repo for $REMOTE_PATH (status $HTTP_STATUS)." >&2
-            exit 1
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Read submission and description
@@ -322,23 +378,20 @@ jobs:
           set -euo pipefail
 
           {
-            echo "solution<<EOF"
-            while IFS= read -r FILE; do
-              [[ -z "$FILE" ]] && continue
-              if [[ -f "$FILE" ]]; then
-                echo "### $FILE"
-                echo
-                cat "$FILE"
+            echo 'solution<<EOF'
+            while IFS= read -r file; do
+              [[ -z "$file" ]] && continue
+              if [[ -f "$file" ]]; then
+                echo "### $file"
+                cat "$file"
                 echo
               fi
-            done <<<"$FILES"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+            done <<< "$FILES"
+            echo 'EOF'
 
-          {
-            echo "description<<EOF"
+            echo 'description<<EOF'
             cat "$DESCRIPTION"
-            echo "EOF"
+            echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Load analysis template
@@ -350,16 +403,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          TEMPLATE_CONTENT="$(curl -fsSL "$TEMPLATE_URL")"
-          if [[ -z "$TEMPLATE_CONTENT" ]]; then
-            echo "Failed to download template from $TEMPLATE_URL" >&2
+          BODY="$(curl -fsSL "$TEMPLATE_URL" || true)"
+          if [[ -z "$BODY" ]]; then
+            echo "Template body is empty or could not be fetched" >&2
             exit 1
           fi
 
           {
-            echo "body<<EOF"
-            printf "%s\n" "$TEMPLATE_CONTENT"
-            echo "EOF"
+            echo 'body<<EOF'
+            printf '%s
+' "$BODY"
+            echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Compose prompt
@@ -374,106 +428,112 @@ jobs:
           set -euo pipefail
 
           {
-            echo "prompt<<EOF"
-            printf "%s\n\n" "$TEMPLATE"
-            echo "Task description:"
-            echo "---"
-            printf "%s\n" "$DESCRIPTION"
-            echo "---"
+            echo 'prompt<<EOF'
+            printf '%s\n' "$TEMPLATE"
+            echo
+            echo 'Task description:'
+            printf '%s\n' "$DESCRIPTION"
             echo
             echo "Student's solution:"
-            echo "---"
-            printf "%s\n" "$SOLUTION"
-            echo "---"
-            echo "EOF"
+            printf '%s\n' "$SOLUTION"
+            echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Run OpenRouter analysis
         id: openrouter
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
+        shell: python
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PROMPT: ${{ steps.prompt.outputs.prompt }}
-          TEMPERATURE: "0.1"
+          TEMPERATURE: '0.1'
           MODEL: ${{ env.OPENROUTER_MODEL }}
-        shell: python
         run: |
           import json
           import os
-          import urllib.error
+          import sys
           import urllib.request
 
           api_key = os.environ.get("OPENROUTER_API_KEY")
-          if not api_key:
-              raise SystemExit("Missing OPENROUTER_API_KEY secret.")
-
-          prompt = os.environ["PROMPT"]
+          prompt = os.environ.get("PROMPT", "")
           temperature = float(os.environ.get("TEMPERATURE", "0.1"))
+          primary_model = os.environ.get("MODEL") or "x-ai/grok-4.1-fast:free"
+          fallback_model = "gpt-4o-mini"
 
-          primary_model = os.environ.get("MODEL", "x-ai/grok-4.1-fast:free")
-          fallback_model = "openai/gpt-oss-20b:free"
+          if not api_key:
+            print("OPENROUTER_API_KEY is required", file=sys.stderr)
+            sys.exit(1)
 
-          def call_openrouter(model: str) -> str:
-              payload = {
-                  "model": model,
-                  "messages": [
-                      {
-                          "role": "system",
-                          "content": (
-                              "You assist instructors by reviewing Python assignments. "
-                              "Return actionable, concise feedback."
-                          ),
-                      },
-                      {"role": "user", "content": prompt},
-                  ],
-                  "temperature": temperature,
-              }
+          if not prompt.strip():
+            print("PROMPT is empty", file=sys.stderr)
+            sys.exit(1)
 
-              req = urllib.request.Request(
-                  "https://openrouter.ai/api/v1/chat/completions",
-                  data=json.dumps(payload).encode("utf-8"),
-                  headers={
-                      "Content-Type": "application/json",
-                      "Authorization": f"Bearer {api_key}",
-                      "HTTP-Referer": "https://github.com/Pau1R/python2026",
-                      "X-Title": "Lesson Task Analysis Workflow",
-                  },
-              )
+          def call(model: str):
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            data = {
+              "model": model,
+              "temperature": temperature,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "You are an assistant that reviews Python assignments and provides detailed, constructive feedback.",
+                },
+                {
+                  "role": "user",
+                  "content": prompt,
+                },
+              ],
+            }
 
-              try:
-                  with urllib.request.urlopen(req, timeout=90) as resp:
-                      body = resp.read()
-              except urllib.error.HTTPError as exc:
-                  detail = exc.read().decode("utf-8", errors="replace")
-                  raise RuntimeError(f"OpenRouter request failed: {exc.code} {detail}")
-              except urllib.error.URLError as exc:
-                  raise RuntimeError(f"OpenRouter request failed: {exc.reason}")
+            req = urllib.request.Request(
+              url,
+              data=json.dumps(data).encode("utf-8"),
+              headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/Pau1R/python2026",
+                "X-Title": "python2026-lesson-task-analysis",
+              },
+            )
 
-              data = json.loads(body)
-              choices = data.get("choices") or []
-              if not choices:
-                  raise RuntimeError("OpenRouter response missing choices")
+            try:
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                body = resp.read()
+            except Exception as exc:  # noqa: BLE001
+              print(f"Error calling OpenRouter with model {model}: {exc}", file=sys.stderr)
+              return None
 
-              return choices[0]["message"].get("content", "").rstrip()
+            try:
+              obj = json.loads(body)
+            except Exception as exc:  # noqa: BLE001
+              print(f"Failed to parse OpenRouter response for model {model}: {exc}", file=sys.stderr)
+              return None
 
-          errors = []
-          content = ""
-          for model in (primary_model, fallback_model):
-              try:
-                  content = call_openrouter(model)
-                  break
-              except RuntimeError as exc:
-                  errors.append(f"{model}: {exc}")
+            choices = obj.get("choices") or []
+            if not choices:
+              return None
 
-          if not content:
-              message = "OpenRouter request failed for all models: " + " | ".join(errors)
-              raise SystemExit(message)
+            message = choices[0].get("message") or {}
+            content = message.get("content") or ""
+            return content.strip()
 
-          output_path = os.environ["GITHUB_OUTPUT"]
-          with open(output_path, "a", encoding="utf-8") as fh:
-              fh.write("response<<EOF\n")
-              fh.write(content)
-              fh.write("\nEOF\n")
+          response = call(primary_model)
+          if not response:
+            response = call(fallback_model)
+
+          if not response:
+            print("Failed to obtain response from OpenRouter", file=sys.stderr)
+            sys.exit(1)
+
+          github_output = os.environ.get("GITHUB_OUTPUT")
+          if not github_output:
+            print("GITHUB_OUTPUT is not set", file=sys.stderr)
+            sys.exit(1)
+
+          with open(github_output, "a", encoding="utf-8") as fh:
+            fh.write("response<<EOF\n")
+            fh.write(response)
+            fh.write("\nEOF\n")
 
       - name: Save report locally
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
@@ -483,8 +543,10 @@ jobs:
           RESPONSE: ${{ steps.openrouter.outputs.response }}
         run: |
           set -euo pipefail
-          printf "%s\n" "$RESPONSE" > "$REPORT"
-          echo "Report saved to $REPORT"
+
+          mkdir -p "$(dirname "$REPORT")"
+          printf '%s\n' "$RESPONSE" > "$REPORT"
+          echo "Saved report to $REPORT"
 
       - name: Commit report to student repo
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
@@ -496,14 +558,17 @@ jobs:
           REPORT_AUTHOR_EMAIL: ${{ env.REPORT_AUTHOR_EMAIL }}
         run: |
           set -euo pipefail
+
           git config user.name "$REPORT_AUTHOR_NAME"
           git config user.email "$REPORT_AUTHOR_EMAIL"
+
           git add "$REPORT"
           if git diff --cached --quiet; then
-            echo "No report changes to commit in student repo."
+            echo "No changes to commit in student repo."
             exit 0
           fi
-          git commit -m "Add $REPORT_NAME"
+
+          git commit -m "Add ${REPORT_NAME}"
           git push
 
       - name: Upload analysis artifact
@@ -530,14 +595,19 @@ jobs:
           REPORT_NAME: ${{ steps.meta.outputs.report_name }}
         run: |
           set -euo pipefail
-          DEST_DIR="teacher-tasks/$REMOTE_DIR"
-          DEST_PATH="$DEST_DIR/$REPORT_NAME"
+
+          DEST_DIR="teacher-tasks/${REMOTE_DIR}"
+          DEST_PATH="${DEST_DIR}/${REPORT_NAME}"
+
           mkdir -p "$DEST_DIR"
-          if [[ -f "$DEST_PATH" ]]; then
-            echo "Teacher report $DEST_PATH already exists. Skipping copy to avoid overwriting."
+
+          if [[ -e "$DEST_PATH" ]]; then
+            echo "Report already exists in teacher repo at $DEST_PATH. Not overwriting."
             exit 0
           fi
+
           cp "$SOURCE_REPORT" "$DEST_PATH"
+          echo "Copied report to $DEST_PATH"
 
       - name: Commit report to teacher repo
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
@@ -549,13 +619,17 @@ jobs:
           REPORT_AUTHOR_EMAIL: ${{ env.REPORT_AUTHOR_EMAIL }}
         run: |
           set -euo pipefail
+
           cd teacher-tasks
+
           git config user.name "$REPORT_AUTHOR_NAME"
           git config user.email "$REPORT_AUTHOR_EMAIL"
-          git add "$REMOTE_DIR/$REPORT_NAME"
+
+          git add "${REMOTE_DIR}/${REPORT_NAME}"
           if git diff --cached --quiet; then
-            echo "No report changes to commit."
+            echo "No changes to commit in teacher repo."
             exit 0
           fi
-          git commit -m "Add $REPORT_NAME"
+
+          git commit -m "Add ${REPORT_NAME}"
           git push
