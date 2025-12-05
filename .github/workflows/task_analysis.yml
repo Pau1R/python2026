@@ -69,115 +69,117 @@ jobs:
 
           echo "Resolved BASE=$BASE"
 
-          mapfile -t NEW_SOLUTIONS < <(\
+          mapfile -t NEW_SOLUTIONS < <(
             git diff --diff-filter=A --name-only "$BASE" HEAD -- \
               'lessons/**/homework/**' \
-              'lessons/**/tasks/**' \
-            | sort -u
+              'lessons/**/tasks/**' || true
           )
 
-          if (( ${#NEW_SOLUTIONS[@]} == 0 )); then
-            echo "No newly added solutions found. Skipping."
+          if [[ "${#NEW_SOLUTIONS[@]}" -eq 0 ]]; then
+            echo "No newly added solution files detected. Skipping analysis."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           MODE=""
-          SOLUTION_DIR=""
           TASK=""
+          SOLUTION_DIR=""
+          declare -a MATCHED=()
 
-          for RAW_PATH in "${NEW_SOLUTIONS[@]}"; do
-            FILE_PATH="$(printf '%b' "$RAW_PATH")"
+          for FILE_PATH in "${NEW_SOLUTIONS[@]}"; do
+            [[ -z "$FILE_PATH" ]] && continue
 
-            IFS='/' read -r p1 p2 p3 p4 _ <<<"$FILE_PATH"
+            RAW_PATH="$FILE_PATH"
 
-            CURRENT_MODE=""
-            CURRENT_DIR=""
-            CURRENT_TASK=""
-
-            if [[ "$p1" == "lessons" && "$p3" == "homework" ]]; then
-              CURRENT_MODE="homework"
-              CURRENT_DIR="$p1/$p2/$p3"
-            elif [[ "$p1" == "lessons" && "$p3" == "tasks" ]]; then
-              CURRENT_MODE="task"
-              CURRENT_DIR="$p1/$p2/$p3/$p4"
-            else
-              # Not a recognized pattern. Skip this file.
-              continue
+            if [[ "$FILE_PATH" == \"*\" ]]; then
+              FILE_PATH="${FILE_PATH#\"}"
+              FILE_PATH="${FILE_PATH%\"}"
             fi
 
-            if [[ "$CURRENT_MODE" == "task" ]]; then
-              filename="${FILE_PATH##*/}"
-              if [[ "$filename" =~ ^task_([0-9]{1,2})\.md$ ]]; then
+            FILE_PATH="$(printf '%b' "$FILE_PATH")"
+
+            CURRENT_MODE=""
+            CURRENT_TASK=""
+            CURRENT_DIR=""
+
+            if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework)(/|$) ]]; then
+              CURRENT_MODE="homework"
+              CURRENT_DIR="${BASH_REMATCH[1]}"
+
+            elif [[ "$FILE_PATH" =~ ^(lessons/[^/]+/tasks/[^/]+)(/|$) ]]; then
+              CURRENT_MODE="task"
+              CURRENT_DIR="${BASH_REMATCH[1]}"
+
+              if [[ "$FILE_PATH" =~ task_([0-9]{1,2}) ]]; then
                 CURRENT_TASK="${BASH_REMATCH[1]}"
-              fi
 
-              if [[ -z "$CURRENT_TASK" ]]; then
-                last_component="${CURRENT_DIR##*/}"
-                if [[ "$last_component" =~ ^[0-9]{1,2}$ ]]; then
-                  CURRENT_TASK="$last_component"
-                fi
-              fi
+              elif [[ "${CURRENT_DIR##*/}" =~ ([0-9]{1,2}) ]]; then
+                CURRENT_TASK="${BASH_REMATCH[1]}"
 
-              if [[ -z "$CURRENT_TASK" && -d "$CURRENT_DIR" ]]; then
-                first_task_file="$(ls "$CURRENT_DIR"/task_*.md 2>/dev/null | head -n 1 || true)"
-                if [[ -n "$first_task_file" ]]; then
-                  base_name="${first_task_file##*/}"
-                  if [[ "$base_name" =~ ^task_([0-9]{1,2})\.md$ ]]; then
+              else
+                shopt -s nullglob
+                for DESC_FILE in "$CURRENT_DIR"/task_*.md; do
+                  BASENAME="$(basename "$DESC_FILE")"
+                  if [[ "$BASENAME" =~ task_([0-9]{1,2}) ]]; then
                     CURRENT_TASK="${BASH_REMATCH[1]}"
+                    break
                   fi
-                fi
+                done
+                shopt -u nullglob
               fi
 
-              if [[ -z "$CURRENT_TASK" ]]; then
-                echo "Could not determine task number for $FILE_PATH. Skipping run." >&2
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
+            else
+              continue
             fi
 
             if [[ -z "$MODE" ]]; then
               MODE="$CURRENT_MODE"
-            elif [[ "$MODE" != "$CURRENT_MODE" ]]; then
-              echo "Mixed modes detected (homework and task). Skipping run." >&2
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            if [[ "$MODE" == "task" ]]; then
-              if [[ -z "$TASK" ]]; then
-                TASK="$CURRENT_TASK"
-              elif [[ "$TASK" != "$CURRENT_TASK" ]]; then
-                echo "Multiple task numbers detected ($TASK vs $CURRENT_TASK). Skipping run." >&2
+              TASK="$CURRENT_TASK"
+              SOLUTION_DIR="$CURRENT_DIR"
+            else
+              if [[ "$MODE" != "$CURRENT_MODE" ]]; then
+                echo "Found both homework and task submissions. Skipping analysis."
                 echo "skip=true" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
+
+              if [[ "$MODE" == "task" && -n "$TASK" && -n "$CURRENT_TASK" && "$TASK" != "$CURRENT_TASK" ]]; then
+                echo "Found several task numbers in the same push. Skipping analysis."
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              if [[ "$SOLUTION_DIR" != "$CURRENT_DIR" ]]; then
+                echo "Solution files live in different directories. Skipping analysis."
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              if [[ "$MODE" == "task" && -z "$TASK" && -n "$CURRENT_TASK" ]]; then
+                TASK="$CURRENT_TASK"
+              fi
             fi
 
-            if [[ -z "$SOLUTION_DIR" ]]; then
-              SOLUTION_DIR="$CURRENT_DIR"
-            elif [[ "$SOLUTION_DIR" != "$CURRENT_DIR" ]]; then
-              echo "Multiple solution directories detected ($SOLUTION_DIR vs $CURRENT_DIR). Skipping run." >&2
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+            MATCHED+=("$FILE_PATH")
           done
 
-          if [[ -z "$MODE" || -z "$SOLUTION_DIR" ]]; then
-            echo "No valid solution directory detected. Skipping run." >&2
+          if [[ "${#MATCHED[@]}" -eq 0 ]]; then
+            echo "No valid solution files detected. Skipping analysis."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "Detected MODE=$MODE, TASK=$TASK, SOLUTION_DIR=$SOLUTION_DIR"
 
-          mapfile -t ALL_CHANGES < <(git diff --name-only "$BASE" HEAD | sort -u)
+          mapfile -t ALL_CHANGES < <(git diff --name-only "$BASE" HEAD || true)
 
-          TARGETS=()
-          for RAW_PATH in "${ALL_CHANGES[@]}"; do
-            FILE_PATH="$(printf '%b' "$RAW_PATH")"
-            if [[ "$FILE_PATH" == "$SOLUTION_DIR"* && -f "$FILE_PATH" ]]; then
-              TARGETS+=("$FILE_PATH")
+          declare -a TARGETS=()
+          for CHANGED_PATH in "${ALL_CHANGES[@]}"; do
+            [[ -z "$CHANGED_PATH" ]] && continue
+            if [[ "$CHANGED_PATH" == "$SOLUTION_DIR" || "$CHANGED_PATH" == "$SOLUTION_DIR"/* ]]; then
+              if [[ -f "$CHANGED_PATH" ]]; then
+                TARGETS+=("$CHANGED_PATH")
+              fi
             fi
           done
 
@@ -188,17 +190,8 @@ jobs:
             echo "dir=$SOLUTION_DIR"
             echo "base=$BASE"
 
-            echo 'solutions<<EOF'
-            for p in "${NEW_SOLUTIONS[@]}"; do
-              printf '%s\n' "$p"
-            done | sort -u
-            echo 'EOF'
-
-            echo 'files<<EOF'
-            for p in "${TARGETS[@]}"; do
-              printf '%s\n' "$p"
-            done | sort -u
-            echo 'EOF'
+            printf 'solutions<<EOF\n%s\nEOF\n' "$(printf "%s\n" "${MATCHED[@]}" | sort -u)"
+            printf 'files<<EOF\n%s\nEOF\n' "$(printf "%s\n" "${TARGETS[@]}" | sort -u)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Resolve lesson metadata
