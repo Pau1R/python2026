@@ -1,0 +1,3 @@
+tngtech/deepseek-r1t2-chimera:free
+kwaipilot/kat-coder-pro:free
+tngtech/deepseek-r1t-chimera:free
