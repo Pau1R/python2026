@@ -183,6 +183,12 @@ jobs:
             fi
           done
 
+          echo "DEBUG DETECT: MODE=$MODE TASK=$TASK SOLUTION_DIR=$SOLUTION_DIR"
+          echo "DEBUG DETECT: MATCHED (solutions):"
+          printf '%s\n' "${MATCHED[@]}"
+          echo "DEBUG DETECT: TARGETS (files to read):"
+          printf '%s\n' "${TARGETS[@]}"
+
           {
             echo "skip=false"
             echo "mode=$MODE"
@@ -366,12 +372,20 @@ jobs:
 
           {
             echo 'solution<<EOF'
-            while IFS= read -r file; do
-              [[ -z "$file" ]] && continue
-              if [[ -f "$file" ]]; then
-                echo "### $file"
-                cat "$file"
+            echo "DEBUG CONTENT: FILES raw:"
+            printf '%s\n' "$FILES" >&2
+
+            while IFS= read -r FILE; do
+              FILE="${FILE//$'\r'/}"  # strip CR if any
+              [[ -z "$FILE" ]] && continue
+              echo "DEBUG CONTENT: processing FILE='$FILE'" >&2
+              if [[ -f "$FILE" ]]; then
+                echo "### $FILE"
                 echo
+                cat "$FILE"
+                echo
+              else
+                echo "DEBUG CONTENT: file not found on disk: '$FILE'" >&2
               fi
             done <<< "$FILES"
             echo 'EOF'
@@ -413,6 +427,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "DEBUG PROMPT: DESCRIPTION length=${#DESCRIPTION}" >&2
+          echo "DEBUG PROMPT: SOLUTION length=${#SOLUTION}" >&2
+          echo "DEBUG PROMPT (first 500 chars of SOLUTION):" >&2
+          printf '%s\n' "$SOLUTION" | head -c 500 >&2 || true
+          echo >&2
+
           {
             echo 'prompt<<EOF'
             printf '%s\n' "$TEMPLATE"
@@ -442,6 +462,9 @@ jobs:
 
           api_key = os.environ.get("OPENROUTER_API_KEY")
           prompt = os.environ.get("PROMPT", "")
+          print(f"DEBUG OPENROUTER: prompt length={len(prompt)}", file=sys.stderr)
+          print("DEBUG OPENROUTER: prompt preview:", file=sys.stderr)
+          print(prompt[:800], file=sys.stderr)
           temperature = float(os.environ.get("TEMPERATURE", "0.1"))
           primary_model = os.environ.get("MODEL") or "x-ai/grok-4.1-fast:free"
           fallback_model = "gpt-4o-mini"
