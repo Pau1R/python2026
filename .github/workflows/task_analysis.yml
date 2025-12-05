@@ -334,10 +334,10 @@ jobs:
 
             ENCODED_REMOTE_PATH="$(
               REMOTE_PATH="$REMOTE_PATH" python - << 'PY'
-import os, urllib.parse
-path = os.environ.get("REMOTE_PATH", "")
-print(urllib.parse.quote(path))
-PY
+              import os, urllib.parse
+              path = os.environ.get("REMOTE_PATH", "")
+              print(urllib.parse.quote(path))
+              PY
             )"
 
             API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/${ENCODED_REMOTE_PATH}"
