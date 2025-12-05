@@ -176,6 +176,7 @@ jobs:
           TASK: ${{ steps.detect.outputs.task }}
           DIR: ${{ steps.detect.outputs.dir }}
           REPOSITORY: ${{ github.repository }}
+          TASKS_REPO_TOKEN: ${{ secrets.TASKS_REPO_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -187,8 +188,14 @@ jobs:
 
           STUDENT="$OWNER"
 
-          MAPPING_URL="https://raw.githubusercontent.com/Pau1R/python2026_tasks/main/students/name_mapping.md"
-          MAP_CONTENT="$(curl -fsSL "$MAPPING_URL" 2>/dev/null || true)"
+          API_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/students/name_mapping.md"
+          MAP_CONTENT=""
+          if [[ -n "${TASKS_REPO_TOKEN:-}" ]]; then
+            MAP_CONTENT="$(curl -fsSL \
+              -H "Authorization: Bearer $TASKS_REPO_TOKEN" \
+              -H "Accept: application/vnd.github.raw" \
+              "$API_URL" 2>/dev/null || true)"
+          fi
           if [[ -n "$MAP_CONTENT" ]]; then
             while IFS= read -r LINE; do
               [[ -z "$LINE" ]] && continue
