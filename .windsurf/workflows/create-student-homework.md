@@ -17,7 +17,7 @@ auto_execution_mode: 1
      - номер урока `<lesson_number>`
      - дату урока `<lesson_date>`
      - название темы `<lesson_title>`
-
+ 
 2. Запомни:
    - путь к уроку в репозитории задач  
      `python2026_tasks/lessons/lesson <lesson_number> (<lesson_date>). <lesson_title>`
@@ -121,7 +121,7 @@ auto_execution_mode: 1
      - `Урок <lesson_number> (<lesson_date>). <lesson_title>`
 
 2. Путь к файлу студента:
-   - `/Users/paul/Personal/Работа/Академия ТОП/Группы/Python2026/students/<student_name>/lessons/<lesson_folder>/homework <lesson_number>.md`
+   - `/Users/paul/Personal/Работа/Академия ТОП/Группы/Python2026/students/<student_name>/lessons/<lesson_folder>/homework/homework <lesson_number> <student_name>.md`
 
 3. Если нужные папки не существуют:
    - создай `lessons/<lesson_folder>`
