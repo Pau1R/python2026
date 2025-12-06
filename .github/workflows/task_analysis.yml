@@ -275,7 +275,7 @@ jobs:
           REMOTE_DIR="lessons/$REL_WITH_LESSON"
 
           if [[ "$MODE" == "homework" ]]; then
-            DESCRIPTION="$DIR_STRIPPED/homework.md"
+            DESCRIPTION="$DIR_STRIPPED/homework/homework ${LESSON_NUM} ${STUDENT}.md"
             REPORT_NAME="homework ${LESSON_NUM} ${STUDENT} result.md"
             REPORT_PATH="$DIR_STRIPPED/homework/$REPORT_NAME"
           elif [[ "$MODE" == "task" ]]; then
