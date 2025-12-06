@@ -673,22 +673,27 @@ jobs:
             exit 1
           fi
 
-          RESULTS_DIR="teacher-tasks/lessons/${LESSON_DIR}"
+          RELATIVE_RESULTS_DIR="lessons/${LESSON_DIR}"
+          RESULTS_DIR="teacher-tasks/${RELATIVE_RESULTS_DIR}"
           mkdir -p "$RESULTS_DIR"
 
           if [[ "${MODE}" == "homework" ]]; then
-            RESULTS_FILE="$RESULTS_DIR/homework_results.md"
+            RESULTS_FILE_REL="${RELATIVE_RESULTS_DIR}/homework_results.md"
             TASK_ID="0"
           else
-            RESULTS_FILE="$RESULTS_DIR/task_results.md"
+            RESULTS_FILE_REL="${RELATIVE_RESULTS_DIR}/task_results.md"
             TASK_ID="${TASK_ID_RAW:-0}"
           fi
+
+          RESULTS_FILE="teacher-tasks/${RESULTS_FILE_REL}"
 
           SCORE="$(python -c $'import os\nimport re\npath = os.environ.get("REPORT_FILE")\nscore = 0\nif path and os.path.exists(path):\n    text = open(path, encoding="utf-8").read()\n    match = re.search(r"result:\s*(\\d{1,3})\\s*/\\s*100", text, re.IGNORECASE)\n    if match:\n        score = max(0, min(100, int(match.group(1))))\nprint(score)')"
 
           DATE_ENTRY="${LESSON_DATE:-$(date '+%d.%m')}"
           echo "${STUDENT},${SCORE},${DATE_ENTRY},${TASK_ID}" >> "$RESULTS_FILE"
           echo "Appended summary to $RESULTS_FILE"
+
+          echo "RESULTS_FILE_REL=${RESULTS_FILE_REL}" >> "$GITHUB_ENV"
 
       - name: Commit report to teacher repo
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
@@ -707,6 +712,9 @@ jobs:
           git config user.email "$REPORT_AUTHOR_EMAIL"
 
           git add "${REMOTE_DIR}/${REPORT_NAME}"
+          if [[ -n "${RESULTS_FILE_REL:-}" && -f "${RESULTS_FILE_REL}" ]]; then
+            git add "${RESULTS_FILE_REL}"
+          fi
           if git diff --cached --quiet; then
             echo "No changes to commit in teacher repo."
             exit 0
