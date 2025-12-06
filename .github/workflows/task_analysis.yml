@@ -277,15 +277,15 @@ jobs:
           if [[ "$MODE" == "homework" ]]; then
             DESCRIPTION="$DIR_STRIPPED/homework.md"
             REPORT_NAME="homework ${LESSON_NUM} ${STUDENT} result.md"
+            REPORT_PATH="$DIR_STRIPPED/homework/$REPORT_NAME"
           elif [[ "$MODE" == "task" ]]; then
             DESCRIPTION="$DIR_STRIPPED/task ${LESSON_NUM}.${TASK} ${STUDENT}.md"
             REPORT_NAME="task ${LESSON_NUM}.${TASK} ${STUDENT} result.md"
+            REPORT_PATH="$DIR_STRIPPED/$REPORT_NAME"
           else
             echo "Unknown MODE: $MODE" >&2
             exit 1
           fi
-
-          REPORT_PATH="$DIR_STRIPPED/$REPORT_NAME"
 
           if [[ ! -f "$DESCRIPTION" ]]; then
             echo "Description file does not exist: $DESCRIPTION" >&2
