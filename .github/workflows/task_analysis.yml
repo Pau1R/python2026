@@ -230,8 +230,11 @@ jobs:
                 "$NAME_MAPPING_URL" 2>/dev/null || true
             )"
 
+            echo "DEBUG META: fetched NAME_MAPPING_URL, length=${#MAP_CONTENT}" >&2
+
             if [[ -n "$MAP_CONTENT" ]]; then
               while IFS= read -r line; do
+                echo "DEBUG META: raw mapping line='$line'" >&2
                 [[ -z "$line" ]] && continue
                 [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
@@ -239,10 +242,15 @@ jobs:
                   SHORT_NAME="${BASH_REMATCH[1]}"
                   GITHUB_NAME="${BASH_REMATCH[2]}"
 
+                  echo "DEBUG META: parsed SHORT_NAME='$SHORT_NAME', GITHUB_NAME='$GITHUB_NAME', OWNER='$OWNER'" >&2
+
                   if [[ "$GITHUB_NAME" == "$OWNER" ]]; then
+                    echo "DEBUG META: OWNER matches mapping. Using STUDENT='$SHORT_NAME' for OWNER='$OWNER'" >&2
                     STUDENT="$SHORT_NAME"
                     break
                   fi
+                else
+                  echo "DEBUG META: line did not match mapping regex" >&2
                 fi
               done <<< "$MAP_CONTENT"
             fi
