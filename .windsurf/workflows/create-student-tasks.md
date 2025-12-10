@@ -22,7 +22,7 @@ auto_execution_mode: 3
 2. Используй файлы:
    - `python2026/course.md`
      - для проверки. что урок существует и тема совпадает
-   - `python2026/lessons/Урок <lesson_number> (<lesson_date>). <lesson_title>.md`
+   - `python2026/lessons/lesson <lesson_number> (<lesson_date>). <lesson_title>.md`
      - подробное содержание урока для студентов
      - в этом файле обязательно должны быть 3 или 4 блока темы
    - `python2026_tasks/lessons/lesson <lesson_number> (<lesson_date>). <lesson_title>/notes.md`

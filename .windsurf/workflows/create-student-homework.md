@@ -22,7 +22,7 @@ auto_execution_mode: 1
    - путь к уроку в репозитории задач  
      `python2026_tasks/lessons/lesson <lesson_number> (<lesson_date>). <lesson_title>`
    - путь к уроку в репозитории преподавателя  
-     `python2026/lessons/Урок <lesson_number> (<lesson_date>). <lesson_title>.md`
+     `python2026/lessons/lesson <lesson_number> (<lesson_date>). <lesson_title>.md`
 
 Если урок по текущей дате найти нельзя. остановись и сообщи об ошибке.
 
@@ -118,7 +118,7 @@ auto_execution_mode: 1
 
 1. Определи имя папки урока:
    - `<lesson_folder>` должно точно совпадать с именем папки урока в репозитории преподавателя:
-     - `Урок <lesson_number> (<lesson_date>). <lesson_title>`
+     - `lesson <lesson_number> (<lesson_date>). <lesson_title>`
 
 2. Путь к файлу студента:
    - `/Users/paul/Personal/Работа/Академия ТОП/Группы/Python2026/students/<student_name>/lessons/<lesson_folder>/homework/homework <lesson_number> <student_name>.md`
