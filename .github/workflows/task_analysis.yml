@@ -332,6 +332,12 @@ jobs:
           set -euo pipefail
 
           SKIP="false"
+          ACTOR="${GITHUB_ACTOR:-}"
+
+          if [[ "$ACTOR" == "Pau1R" ]]; then
+            echo "Commit pushed by Pau1R. Skipping analysis."
+            SKIP="true"
+          fi
 
           if [[ -n "${BASE:-}" ]]; then
             if git diff --diff-filter=A --name-only "$BASE" HEAD -- "$DESCRIPTION" | grep -q .; then
