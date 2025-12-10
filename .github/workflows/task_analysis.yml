@@ -623,6 +623,7 @@ jobs:
           fi
 
           git commit -m "Add ${REPORT_NAME}"
+          git pull --rebase
           git push
 
       - name: Upload analysis artifact
