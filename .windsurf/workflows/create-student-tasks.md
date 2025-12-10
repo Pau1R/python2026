@@ -27,8 +27,6 @@ auto_execution_mode: 3
      - в этом файле обязательно должны быть 3 или 4 блока темы
    - `python2026_tasks/lessons/lesson <lesson_number> (<lesson_date>). <lesson_title>/notes.md`
      - конспект преподавателя. цель. тезисы и план
-   - `python2026_tasks/students/all_performance.md`
-     - общая сводка по уровням и типичным ошибкам студентов
 3. Для **каждого** студента:
    - `python2026_tasks/students/<студент>/performance.md`
      - индивидуальный уровень и ошибки
@@ -56,7 +54,7 @@ auto_execution_mode: 3
 1. Построй список студентов по директории:
    - `python2026_tasks/students/<студент>/performance.md`
 2. Для **каждого** студента:
-   - проанализируй `performance.md` и `all_performance.md`
+   - проанализируй `performance.md`
    - определи уровень:
      - слабый
      - средний
