@@ -220,7 +220,7 @@ jobs:
 
           STUDENT="$OWNER"
 
-          NAME_MAPPING_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/mapping/name_mapping.md"
+          NAME_MAPPING_URL="https://api.github.com/repos/Pau1R/python2026_tasks/contents/name_mapping.md"
 
           if [[ -n "${TASKS_REPO_TOKEN:-}" ]]; then
             MAP_CONTENT="$(
@@ -473,7 +473,7 @@ jobs:
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         shell: python
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} 
           PROMPT: ${{ steps.prompt.outputs.prompt }}
           TEMPERATURE: '0.1'
           MODELS_FILE_URL: https://raw.githubusercontent.com/Pau1R/python2026/main/misc/openrouter%20models.txt
