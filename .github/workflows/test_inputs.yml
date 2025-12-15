@@ -1,0 +1,19 @@
+name: Square a Number
+
+on:
+  workflow_dispatch:
+    inputs:
+      number:
+        description: "Enter a number"
+        required: true
+        type: number
+
+jobs:
+  square:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Calculate square
+        run: |
+          n=${{ inputs.number }}
+          echo "Number: $n"
+          echo "Square: $((n * n))"
