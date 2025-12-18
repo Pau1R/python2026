@@ -1,109 +1,209 @@
-AUDIT_LOG = []
-ORDERS_CREATED = 0
+# Урок 37 (18.12). Практическая работа с функциями
 
-ALLOWED_STATUS = ("new", "paid", "cancelled")
+## Цель занятия
+Закрепить темы прошлого урока про функции. Параметры и аргументы, `return` и `None`, позиционные и именованные аргументы, значения по умолчанию и ловушка изменяемых значений, `*args` и `**kwargs`, область видимости и замыкания.
 
+## Формат
+Занятие состоит из 4 блоков.
 
-def make_create_order(prefix):
-    current = 0
+В каждом блоке.
+1. Разбираем пример кода пошагово.
+2. Выполняете самостоятельное задание.
+3. Делаем общий разбор и сравниваем решения.
 
-    def create_order(customer, *products, status="new", discounts=None, **meta):
-        nonlocal current
-        global ORDERS_CREATED
+---
 
-        if status not in ALLOWED_STATUS:
-            raise ValueError("Invalid status")
+## Блок 1. Параметры, аргументы, `return`, `None`. Отличие `print` от результата
 
-        if discounts is None:
-            discounts = []
+### Пример
+Задача. Посчитать стоимость заказа с учетом скидки и доставки.
 
-        current += 1
-        order_id = f"{prefix}{current}"
-
-        order = {
-            "id": order_id,
-            "customer": customer,
-            "products": list(products),
-            "discounts": list(discounts),
-            "status": status,
-            "meta": meta,
-        }
-
-        ORDERS_CREATED += 1
-        AUDIT_LOG.append(f"create {order_id}")
-        return order
-
-    return create_order
+```python
+def order_total(price, discount_percent, delivery_cost):
+    discount = price * discount_percent / 100
+    total = price - discount + delivery_cost
+    return total
 
 
-create_order = make_create_order("ORD-")
+result = order_total(1200, 10, 200)
+print(result)
+```
+
+- Что приходит на вход.
+  - `price=1200`.
+  - `discount_percent=10`.
+  - `delivery_cost=200`.
+- Что делает код шаг за шагом.
+  - Вычисляет скидку в рублях. `discount = 1200 * 10 / 100`.
+  - Вычисляет итог. `total = 1200 - discount + 200`.
+  - Возвращает итог через `return`.
+- Что возвращается или печатается.
+  - Функция возвращает число `1280.0`.
+  - Затем печатается `1280.0`.
+- Частая ошибка.
+  - Заменить `return total` на `print(total)` и ожидать, что результат можно будет использовать дальше.
+
+Дополнительная демонстрация, зачем важно возвращать значение.
+
+```python
+def order_total_print(price, discount_percent, delivery_cost):
+    discount = price * discount_percent / 100
+    total = price - discount + delivery_cost
+    print(total)
 
 
-def print_order(order, prices, tax=0.0, title=None):
-    if title is None:
-        title = "Заказ"
+value = order_total_print(1200, 10, 200)
+print(value)
+```
 
-    subtotal = sum(prices.get(p, 0) for p in order["products"]) - sum(order["discounts"])
-    total_value = round(subtotal * (1 + tax), 2)
-    print(f"{title} {order['id']} для {order['customer']}: {total_value}")
+ - Что произойдет.
+  - Сначала напечатается `1280.0` внутри функции.
+  - Затем напечатается `None`, потому что явного `return` нет.
 
+### Самостоятельное задание 1
 
-def delivery_fee(weight_kg, cache={}, *, safe=False, safe_cache=None):
-    if safe:
-        if safe_cache is None:
-            safe_cache = {}
-        storage = safe_cache
-    else:
-        storage = cache
+### Общий разбор после выполнения
+- **Проверка `return`**. Есть ли возврат значения там, где оно нужно.
+- **Тип результата**. Число, `bool`, кортеж, `None`.
+- **Смысл имен**. Понятны ли названия параметров и переменных.
 
-    if weight_kg in storage:
-        return storage[weight_kg]
-    storage[weight_kg] = round(weight_kg * 49.9, 2)
-    return storage[weight_kg]
+---
 
+## Блок 2. Позиционные и именованные аргументы. Порядок передачи
 
-def summarize_orders(orders, prices, tax=0.0):
-    totals = []
-    for o in orders:
-        if o["status"] == "cancelled":
-            continue
-        subtotal = sum(prices.get(p, 0) for p in o["products"]) - sum(o["discounts"])
-        totals.append(round(subtotal * (1 + tax), 2))
+### Пример
+Задача. Сформировать строку для отправки сообщения с учетом приоритета.
 
-    if not totals:
-        return {"min": 0.0, "max": 0.0, "sum": 0.0, "avg": 0.0}
-
-    return {
-        "min": min(totals),
-        "max": max(totals),
-        "sum": sum(totals),
-        "avg": round(sum(totals) / len(totals), 2),
-    }
+```python
+def format_message(text, recipient, priority, channel):
+    label = "HIGH" if priority else "NORMAL"
+    return f"[{channel}] {label} to {recipient}. {text}"
 
 
-prices = {"coffee": 120, "croissant": 80, "tea": 70}
+print(format_message("Привет", "Анна", True, "email"))
+print(format_message(text="Привет", channel="email", recipient="Анна", priority=True))
+```
 
-product_list = ["coffee", "croissant"]
-order_meta = {"table": 7, "waiter": "Ann"}
+- Что приходит на вход.
+  - В первом вызове все аргументы позиционные.
+  - Во втором вызове все аргументы именованные, поэтому порядок не важен.
+- Что делает код шаг за шагом.
+  - Если `priority` истинный, ставит метку `HIGH`.
+  - Иначе ставит метку `NORMAL`.
+  - Собирает итоговую строку и возвращает ее.
+- Что возвращается или печатается.
+  - Дважды печатается одна и та же строка.
+- Частая ошибка.
+  - Смешать порядок неправильно. Позиционные аргументы должны идти до именованных.
 
-o1 = create_order("Igor", *product_list, status="paid", **order_meta)
-o1["products"].append("tea")
-AUDIT_LOG.append(f"add_product {o1['id']}")
+Пример ошибки, которую важно уметь узнавать по сообщению.
 
-o2 = create_order(customer="Olga", status="new", vip=True)
+```python
+# Так писать нельзя. После именованного аргумента нельзя передавать позиционный.
+# format_message(text="Привет", "Анна", True, channel="email")
+```
 
-delivery1 = delivery_fee(2)
-delivery2 = delivery_fee(3)
-delivery3 = delivery_fee(2)
+### Самостоятельное задание 2
 
-delivery_cache = {}
-delivery_ok_1 = delivery_fee(2, safe=True, safe_cache=delivery_cache)
-delivery_ok_2 = delivery_fee(3, safe=True, safe_cache=delivery_cache)
-delivery_ok_3 = delivery_fee(2, safe=True, safe_cache=delivery_cache)
+### Общий разбор после выполнения
+- **Читаемость вызовов**. Где лучше позиционно, а где лучше именованно.
+- **Правило порядка**. Сначала позиционные, потом именованные.
+- **Типовые ошибки**. Аргумент передан дважды, перепутан порядок.
 
-print_order(o1, prices, tax=0.1)
-print(summarize_orders([o1, o2], prices, tax=0.1))
-print(ORDERS_CREATED)
-print(delivery1, delivery2, delivery3)
-print(delivery_ok_1, delivery_ok_2, delivery_ok_3)
-print(AUDIT_LOG)
+---
+
+## Блок 3. Значения по умолчанию. Ловушка изменяемых значений по умолчанию
+
+### Пример
+Задача. Накапливать список задач. Кажется, что у функции есть удобный список по умолчанию.
+
+Плохой пример.
+
+```python
+def add_task_bad(task, tasks=[]):
+    tasks.append(task)
+    return tasks
+
+
+print(add_task_bad("сделать дз"))
+print(add_task_bad("помыть посуду"))
+```
+
+- Что приходит на вход.
+  - Во втором вызове `tasks` не передан, но список уже не пустой.
+- Что делает код шаг за шагом.
+  - Использует один и тот же список как значение по умолчанию.
+  - Этот список изменяется через `.append()`.
+- Что возвращается или печатается.
+  - Во второй строке увидишь накопление из двух задач.
+- Подводный камень.
+  - Новички ожидают, что каждый вызов начнет с пустого списка.
+
+Правильный паттерн. Значение по умолчанию делаем `None`, а список создаем внутри.
+
+```python
+def add_task(task, tasks=None):
+    if tasks is None:
+        tasks = []
+    tasks.append(task)
+    return tasks
+
+
+print(add_task("сделать дз"))
+print(add_task("помыть посуду"))
+```
+
+- Что меняется.
+  - Каждый вызов без `tasks` получает новый список.
+
+### Самостоятельное задание 3
+
+### Общий разбор после выполнения
+- **Почему `None` безопаснее**. Значение по умолчанию не изменяется.
+- **Почему `if not scores` хуже**. Пустой список может быть передан намеренно.
+- **Контроль результата**. Функции возвращают новые значения, или меняют переданный список.
+
+---
+
+## Блок 4. `*args`, `**kwargs`, распаковка. Область видимости и замыкание
+
+### Пример
+Задача. Сделать генератор сообщений. Он запоминает префикс, а затем принимает произвольное количество сообщений и метаданных.
+
+```python
+def make_notifier(prefix):
+    def notify(*messages, **meta):
+        for msg in messages:
+            extra = ""
+            if meta:
+                extra = f" meta={meta}"
+            print(f"{prefix}. {msg}{extra}")
+
+    return notify
+
+
+email_notify = make_notifier("EMAIL")
+
+email_notify("Оплата получена", "Заказ собран", user="Игорь", order_id=17)
+
+msgs = ["Курьер выехал", "Доставлено"]
+info = {"user": "Игорь", "order_id": 17, "city": "Казань"}
+email_notify(*msgs, **info)
+```
+
+- Что приходит на вход.
+  - В `make_notifier` приходит `prefix="EMAIL"`.
+  - В `notify` приходят сообщения как позиционные аргументы. Они собираются в `messages`.
+  - В `notify` приходят метаданные как именованные аргументы. Они собираются в `meta`.
+- Что делает код шаг за шагом.
+  - `make_notifier` создает внутреннюю функцию `notify`.
+  - `notify` использует `prefix` из внешней функции.
+  - Это замыкание. Внутренняя функция помнит значение `prefix`.
+  - При вызове `email_notify(*msgs, **info)` список распаковывается в позиционные аргументы, а словарь распаковывается в именованные.
+- Что возвращается или печатается.
+  - Печатаются строки с префиксом `EMAIL`.
+  - У каждой строки добавляется `meta=...`, если метаданные переданы.
+- Подводный камень.
+  - Если ключи словаря при распаковке `**info` не подходят по логике, они все равно попадут в `meta`.
+
+### Самостоятельное задание 4
