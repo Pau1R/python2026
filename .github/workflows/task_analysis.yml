@@ -659,11 +659,12 @@ jobs:
             fi
           fi
 
-          {
-            echo 'time_info<<EOF'
-            printf '%s\n' "$TIME_INFO"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+          TIME_INFO_B64=""
+          if [[ -n "${TIME_INFO:-}" ]]; then
+            TIME_INFO_B64="$(printf '%s' "$TIME_INFO" | base64 -w 0)"
+          fi
+
+          echo "time_info_b64=${TIME_INFO_B64}" >> "$GITHUB_OUTPUT"
 
       - name: Save report locally
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
@@ -671,14 +672,15 @@ jobs:
         env:
           REPORT: ${{ steps.meta.outputs.report }}
           RESPONSE: ${{ steps.openrouter.outputs.response }}
-          TIME_INFO: ${{ steps.timing.outputs.time_info }}
+          TIME_INFO_B64: ${{ steps.timing.outputs.time_info_b64 }}
         run: |
           set -euo pipefail
 
           mkdir -p "$(dirname "$REPORT")"
           {
-            if [[ -n "${TIME_INFO:-}" ]]; then
-              printf '%s\n' "$TIME_INFO"
+            if [[ -n "${TIME_INFO_B64:-}" ]]; then
+              printf '%s' "$TIME_INFO_B64" | base64 -d
+              echo
               echo
             fi
             printf '%s\n' "$RESPONSE"
