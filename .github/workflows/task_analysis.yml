@@ -596,17 +596,93 @@ jobs:
             fh.write(response)
             fh.write("\nEOF\n")
 
+      - name: Compute timing info
+        id: timing
+        if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
+        shell: bash
+        env:
+          MODE: ${{ steps.detect.outputs.mode }}
+          DESCRIPTION: ${{ steps.meta.outputs.description }}
+          FILES: ${{ steps.detect.outputs.files }}
+          REPORT_TIMEZONE: ${{ env.REPORT_TIMEZONE }}
+        run: |
+          set -euo pipefail
+
+          TZ_NAME="${REPORT_TIMEZONE:-UTC}"
+
+          format_dt() {
+            local ts="$1"
+            TZ="$TZ_NAME" date -d "@${ts}" '+%d.%m в %H:%M'
+          }
+
+          format_h_mm_from_seconds() {
+            local seconds="$1"
+            local hours=$((seconds / 3600))
+            local minutes=$(((seconds % 3600) / 60))
+            printf '%d:%02d' "$hours" "$minutes"
+          }
+
+          ISSUE_TS=""
+          if [[ -n "${DESCRIPTION:-}" ]]; then
+            ISSUE_TS="$(git log --diff-filter=A --follow --format=%ct --reverse -- "$DESCRIPTION" | head -n 1 || true)"
+          fi
+
+          SUBMIT_TS=""
+          if [[ -n "${FILES:-}" ]]; then
+            while IFS= read -r FILE; do
+              FILE="${FILE//$'\r'/}"
+              [[ -z "$FILE" ]] && continue
+              TS="$(git log -1 --format=%ct -- "$FILE" 2>/dev/null || true)"
+              [[ -z "$TS" ]] && continue
+              if [[ -z "$SUBMIT_TS" || "$TS" -gt "$SUBMIT_TS" ]]; then
+                SUBMIT_TS="$TS"
+              fi
+            done <<< "$FILES"
+          fi
+
+          TIME_INFO=""
+          if [[ -n "$ISSUE_TS" && -n "$SUBMIT_TS" ]]; then
+            if [[ "${MODE}" == "task" ]]; then
+              DIFF_SEC=$((SUBMIT_TS - ISSUE_TS))
+              if [[ "$DIFF_SEC" -lt 10800 && "$DIFF_SEC" -ge 0 ]]; then
+                TIME_INFO="Время затраченное на выполнение: $(format_h_mm_from_seconds "$DIFF_SEC")"
+              else
+                TIME_INFO="Задание выдано: $(format_dt "$ISSUE_TS")\nРешение загружено: $(format_dt "$SUBMIT_TS")"
+              fi
+            else
+              TIME_INFO="Задание выдано: $(format_dt "$ISSUE_TS")\nРешение загружено: $(format_dt "$SUBMIT_TS")"
+
+              DAYS_DIFF="$(ISSUE_TS="$ISSUE_TS" SUBMIT_TS="$SUBMIT_TS" python -c 'import os; from datetime import datetime; issue=int(os.environ["ISSUE_TS"]); submit=int(os.environ["SUBMIT_TS"]); days=(datetime.fromtimestamp(submit).date()-datetime.fromtimestamp(issue).date()).days; print(days)')"
+              if [[ -n "$DAYS_DIFF" && "$DAYS_DIFF" -gt 0 ]]; then
+                TIME_INFO="$TIME_INFO\nДней на выполнение: ${DAYS_DIFF}"
+              fi
+            fi
+          fi
+
+          {
+            echo 'time_info<<EOF'
+            printf '%s\n' "$TIME_INFO"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Save report locally
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         shell: bash
         env:
           REPORT: ${{ steps.meta.outputs.report }}
           RESPONSE: ${{ steps.openrouter.outputs.response }}
+          TIME_INFO: ${{ steps.timing.outputs.time_info }}
         run: |
           set -euo pipefail
 
           mkdir -p "$(dirname "$REPORT")"
-          printf '%s\n' "$RESPONSE" > "$REPORT"
+          {
+            if [[ -n "${TIME_INFO:-}" ]]; then
+              printf '%s\n' "$TIME_INFO"
+              echo
+            fi
+            printf '%s\n' "$RESPONSE"
+          } > "$REPORT"
           echo "Saved report to $REPORT"
 
       - name: Commit report to student repo
@@ -681,67 +757,12 @@ jobs:
           LESSON_DIR: ${{ steps.meta.outputs.lesson_dir }}
           LESSON_DATE: ${{ steps.meta.outputs.lesson_date }}
           REPORT_FILE: ${{ steps.meta.outputs.report }}
-          DESCRIPTION: ${{ steps.meta.outputs.description }}
-          FILES: ${{ steps.detect.outputs.files }}
-          REPORT_TIMEZONE: ${{ env.REPORT_TIMEZONE }}
         run: |
           set -euo pipefail
 
           if [[ -z "${LESSON_DIR:-}" ]]; then
             echo "LESSON_DIR is required" >&2
             exit 1
-          fi
-
-          TZ_NAME="${REPORT_TIMEZONE:-UTC}"
-
-          format_dt() {
-            local ts="$1"
-            TZ="$TZ_NAME" date -d "@${ts}" '+%d.%m в %H:%M'
-          }
-
-          format_h_mm_from_seconds() {
-            local seconds="$1"
-            local hours=$((seconds / 3600))
-            local minutes=$(((seconds % 3600) / 60))
-            printf '%d:%02d' "$hours" "$minutes"
-          }
-
-          ISSUE_TS=""
-          if [[ -n "${DESCRIPTION:-}" ]]; then
-            ISSUE_TS="$(git log --diff-filter=A --follow --format=%ct --reverse -- "$DESCRIPTION" | head -n 1 || true)"
-          fi
-
-          SUBMIT_TS=""
-          if [[ -n "${FILES:-}" ]]; then
-            while IFS= read -r FILE; do
-              FILE="${FILE//$'\r'/}"
-              [[ -z "$FILE" ]] && continue
-              TS="$(git log -1 --format=%ct -- "$FILE" 2>/dev/null || true)"
-              [[ -z "$TS" ]] && continue
-              if [[ -z "$SUBMIT_TS" || "$TS" -gt "$SUBMIT_TS" ]]; then
-                SUBMIT_TS="$TS"
-              fi
-            done <<< "$FILES"
-          fi
-
-          TIME_INFO=""
-          if [[ -n "$ISSUE_TS" && -n "$SUBMIT_TS" ]]; then
-            if [[ "${MODE}" == "task" ]]; then
-              DIFF_SEC=$((SUBMIT_TS - ISSUE_TS))
-              if [[ "$DIFF_SEC" -lt 10800 && "$DIFF_SEC" -ge 0 ]]; then
-                TIME_INFO="Время затраченное на выполнение: $(format_h_mm_from_seconds "$DIFF_SEC")"
-              else
-                TIME_INFO="Задание выдано: $(format_dt "$ISSUE_TS"); Решение загружено: $(format_dt "$SUBMIT_TS")"
-              fi
-            else
-              TIME_INFO="Задание выдано: $(format_dt "$ISSUE_TS"); Решение загружено: $(format_dt "$SUBMIT_TS")"
-
-              DAYS_DIFF="$(ISSUE_TS="$ISSUE_TS" SUBMIT_TS="$SUBMIT_TS" python -c 'import os; from datetime import datetime; issue=int(os.environ["ISSUE_TS"]); submit=int(os.environ["SUBMIT_TS"]); days=(datetime.fromtimestamp(submit).date()-datetime.fromtimestamp(issue).date()).days; print(days)')"
-
-              if [[ -n "$DAYS_DIFF" && "$DAYS_DIFF" -gt 0 ]]; then
-                TIME_INFO="$TIME_INFO; Дней на выполнение: ${DAYS_DIFF}"
-              fi
-            fi
           fi
 
           RELATIVE_RESULTS_DIR="lessons/${LESSON_DIR}"
@@ -762,11 +783,7 @@ jobs:
           SCORE="$(python -c $'import os\nimport re\npath = os.environ.get("REPORT_FILE")\nscore = 0\nif path and os.path.exists(path):\n    text = open(path, encoding="utf-8").read()\n    match = re.search(r"result:\\s*(\\d{1,3})\\s*/\\s*100", text, re.IGNORECASE)\n    if match:\n        score = max(0, min(100, int(match.group(1))))\nprint(score)')"
 
           DATE_ENTRY="${LESSON_DATE:-$(date '+%d.%m')}"
-          EXTRA=""
-          if [[ -n "${TIME_INFO:-}" ]]; then
-            EXTRA=" | ${TIME_INFO}"
-          fi
-          echo "${STUDENT},${SCORE},${DATE_ENTRY}${ENTRY_SUFFIX}${EXTRA}" >> "$RESULTS_FILE"
+          echo "${STUDENT},${SCORE},${DATE_ENTRY}${ENTRY_SUFFIX}" >> "$RESULTS_FILE"
           echo "Appended summary to $RESULTS_FILE"
 
           echo "RESULTS_FILE_REL=${RESULTS_FILE_REL}" >> "$GITHUB_ENV"
