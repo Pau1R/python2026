@@ -333,6 +333,7 @@ jobs:
           set -euo pipefail
 
           SKIP="false"
+          OVERWRITE="false"
           ACTOR="${GITHUB_ACTOR:-}"
 
           if [[ "$ACTOR" == "Pau1R" ]]; then
@@ -367,8 +368,20 @@ jobs:
             )"
 
             if [[ "$STATUS" == "200" ]]; then
-              echo "Teacher report already exists in python2026_tasks. Skipping analysis."
-              SKIP="true"
+              EXISTING_CONTENT="$(
+                curl -fsSL \
+                  -H "Authorization: Bearer ${TASKS_REPO_TOKEN}" \
+                  -H "Accept: application/vnd.github.raw" \
+                  "$API_URL" 2>/dev/null || true
+              )"
+
+              if printf '%s' "$EXISTING_CONTENT" | grep -Eq '^(Задание выдано:|Время затраченное на выполнение:|Решение загружено:)' ; then
+                echo "Teacher report already exists in python2026_tasks and contains timing info. Skipping analysis."
+                SKIP="true"
+              else
+                echo "Teacher report exists but is missing timing info. Regenerating and overwriting."
+                OVERWRITE="true"
+              fi
             elif [[ "$STATUS" == "404" ]]; then
               :
             else
@@ -383,6 +396,8 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+          echo "overwrite=${OVERWRITE}" >> "$GITHUB_OUTPUT"
 
       - name: Read submission and description
         id: content
@@ -612,14 +627,12 @@ jobs:
 
           format_dt() {
             local ts="$1"
-            TZ="$TZ_NAME" date -d "@${ts}" '+%d.%m в %H:%M'
+            TZ_NAME="$TZ_NAME" TS="$ts" python -c $'import os\nfrom datetime import datetime\ntry:\n    from zoneinfo import ZoneInfo\nexcept Exception:  # pragma: no cover\n    ZoneInfo = None\n\nts = int(os.environ["TS"])\ntz_name = os.environ.get("TZ_NAME") or "UTC"\nif ZoneInfo:\n    tz = ZoneInfo(tz_name)\n    dt = datetime.fromtimestamp(ts, tz=tz)\nelse:\n    dt = datetime.utcfromtimestamp(ts)\nprint(dt.strftime("%d.%m в %H:%M"))'
           }
 
           format_h_mm_from_seconds() {
             local seconds="$1"
-            local hours=$((seconds / 3600))
-            local minutes=$(((seconds % 3600) / 60))
-            printf '%d:%02d' "$hours" "$minutes"
+            python -c $'import os\nseconds=int(os.environ.get("SECONDS","0"))\nh=seconds//3600\nm=(seconds%3600)//60\nprint(f"{h}:{m:02d}")' SECONDS="$seconds"
           }
 
           ISSUE_TS=""
@@ -661,7 +674,7 @@ jobs:
 
           TIME_INFO_B64=""
           if [[ -n "${TIME_INFO:-}" ]]; then
-            TIME_INFO_B64="$(printf '%s' "$TIME_INFO" | base64 -w 0)"
+            TIME_INFO_B64="$(python -c $'import base64, os, sys\ntext=os.environ.get("TIME_INFO","")\nprint(base64.b64encode(text.encode("utf-8")).decode("ascii"), end="")' TIME_INFO="$TIME_INFO")"
           fi
 
           echo "time_info_b64=${TIME_INFO_B64}" >> "$GITHUB_OUTPUT"
@@ -679,7 +692,7 @@ jobs:
           mkdir -p "$(dirname "$REPORT")"
           {
             if [[ -n "${TIME_INFO_B64:-}" ]]; then
-              printf '%s' "$TIME_INFO_B64" | base64 -d
+              python -c $'import base64, os, sys\nb64=os.environ.get("TIME_INFO_B64","")\nif b64:\n    sys.stdout.write(base64.b64decode(b64).decode("utf-8"))' TIME_INFO_B64="$TIME_INFO_B64"
               echo
               echo
             fi
@@ -733,6 +746,7 @@ jobs:
           SOURCE_REPORT: ${{ steps.meta.outputs.report }}
           REMOTE_DIR: ${{ steps.meta.outputs.remote_dir }}
           REPORT_NAME: ${{ steps.meta.outputs.report_name }}
+          OVERWRITE: ${{ steps.guard.outputs.overwrite }}
         run: |
           set -euo pipefail
 
@@ -741,7 +755,7 @@ jobs:
 
           mkdir -p "$DEST_DIR"
 
-          if [[ -e "$DEST_PATH" ]]; then
+          if [[ -e "$DEST_PATH" && "${OVERWRITE:-false}" != "true" ]]; then
             echo "Report already exists in teacher repo at $DEST_PATH. Not overwriting."
             exit 0
           fi
