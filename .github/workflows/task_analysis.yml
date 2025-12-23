@@ -608,6 +608,82 @@ jobs:
           printf '%s\n' "$RESPONSE" > "$REPORT"
           echo "Saved report to $REPORT"
 
+      - name: Prepend timing info to report
+        if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
+        shell: bash
+        env:
+          REPORT: ${{ steps.meta.outputs.report }}
+          DESCRIPTION: ${{ steps.meta.outputs.description }}
+          FILES: ${{ steps.detect.outputs.files }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "$REPORT" ]]; then
+            echo "Report file does not exist: $REPORT" >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$DESCRIPTION" ]]; then
+            echo "Description file does not exist: $DESCRIPTION" >&2
+            exit 1
+          fi
+
+          DESC_ISO="$(git log --diff-filter=A --format=%cI -- "$DESCRIPTION" | tail -n 1 || true)"
+          if [[ -z "${DESC_ISO:-}" ]]; then
+            DESC_ISO="$(git log -1 --format=%cI -- "$DESCRIPTION" || true)"
+          fi
+
+          if [[ -z "${DESC_ISO:-}" ]]; then
+            echo "Failed to resolve description commit time for: $DESCRIPTION" >&2
+            exit 1
+          fi
+
+          DESC_EPOCH="$(date -d "$DESC_ISO" +%s)"
+
+          SOL_EPOCH=0
+          while IFS= read -r FILE_PATH; do
+            [[ -z "$FILE_PATH" ]] && continue
+            [[ ! -f "$FILE_PATH" ]] && continue
+
+            ISO="$(git log -1 --format=%cI -- "$FILE_PATH" || true)"
+            [[ -z "${ISO:-}" ]] && continue
+            EPOCH="$(date -d "$ISO" +%s)"
+            if (( EPOCH > SOL_EPOCH )); then
+              SOL_EPOCH="$EPOCH"
+            fi
+          done <<< "$FILES"
+
+          if (( SOL_EPOCH <= 0 )); then
+            echo "Failed to resolve solution commit time from provided files" >&2
+            exit 1
+          fi
+
+          DIFF=$(( SOL_EPOCH - DESC_EPOCH ))
+          if (( DIFF < 0 )); then
+            DIFF=0
+          fi
+
+          HEADER=""
+          if (( DIFF < 3 * 3600 )); then
+            HOURS=$(( DIFF / 3600 ))
+            MINS=$(( (DIFF % 3600) / 60 ))
+            HEADER="Время затраченное на выполнение: ${HOURS}:$(printf '%02d' "$MINS")"
+          elif (( DIFF > 24 * 3600 )); then
+            DAYS=$(( (DIFF + 86400 - 1) / 86400 ))
+            HEADER="Дней на выполнение: ${DAYS}"
+          else
+            DESC_FMT="$(date -d "@$DESC_EPOCH" '+%d.%m в %H:%M')"
+            SOL_FMT="$(date -d "@$SOL_EPOCH" '+%d.%m в %H:%M')"
+            HEADER=$'Задание выдано: '"$DESC_FMT"$'\nРешение загружено: '"$SOL_FMT"
+          fi
+
+          TMP_FILE="${REPORT}.tmp"
+          {
+            printf '%s\n\n' "$HEADER"
+            cat "$REPORT"
+          } > "$TMP_FILE"
+          mv "$TMP_FILE" "$REPORT"
+
       - name: Commit report to student repo
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         shell: bash
