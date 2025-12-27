@@ -393,9 +393,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          SOLUTION_DELIM="EOF_SOLUTION_$(date +%s%N)"
+          DESCRIPTION_DELIM="EOF_DESCRIPTION_$(date +%s%N)"
+
           {
-            echo 'solution<<EOF'
-            echo "DEBUG CONTENT: FILES raw:"
+            echo "solution<<${SOLUTION_DELIM}"
+            echo "DEBUG CONTENT: FILES raw:" >&2
             printf '%s\n' "$FILES" >&2
 
             while IFS= read -r FILE; do
@@ -405,17 +408,22 @@ jobs:
               if [[ -f "$FILE" ]]; then
                 echo "### $FILE"
                 echo
-                cat "$FILE"
+                cat "$FILE" || true
                 echo
               else
                 echo "DEBUG CONTENT: file not found on disk: '$FILE'" >&2
               fi
             done <<< "$FILES"
-            echo 'EOF'
+            echo "${SOLUTION_DELIM}"
 
-            echo 'description<<EOF'
-            cat "$DESCRIPTION"
-            echo 'EOF'
+            echo "description<<${DESCRIPTION_DELIM}"
+            if [[ -f "$DESCRIPTION" ]]; then
+              cat "$DESCRIPTION" || true
+            else
+              echo "Description file not found: $DESCRIPTION" >&2
+              echo "(missing description file: $DESCRIPTION)"
+            fi
+            echo "${DESCRIPTION_DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Load analysis template
