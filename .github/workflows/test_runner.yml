@@ -14,13 +14,42 @@ permissions:
   contents: write
   discussions: write
 
+concurrency:
+  group: test-runner-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check for concurrent workflow
+        id: concurrent_check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          # Check if another test-runner workflow is already in progress
+          # Get all workflow runs for this repository
+          response=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/test_runner.yml/runs?status=in_progress")
+          
+          # Count running workflows that started before this one
+          count=$(echo "$response" | jq --arg current_id "$CURRENT_RUN_ID" '.workflow_runs | map(select(.id | tonumber < ($current_id | tonumber))) | length')
+          
+          if [ "$count" -gt 0 ]; then
+            echo "Another test-runner workflow is already running. Skipping this execution."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "No concurrent workflows detected. Proceeding."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Verify starter
         id: starter
+        if: ${{ steps.concurrent_check.outputs.skip != 'true' }}
         shell: python
         env:
           GITHUB_CONTEXT: ${{ toJson(github) }}
@@ -54,15 +83,8 @@ jobs:
                   if not author:
                       author = event['sender'].get('login', '')
           
-          required_author = 'pau1r'
           required_line = '- [x] ← нажмите и подождите 10 секунд для запуска теста'
-          
-          # Convert author to lowercase for comparison
-          author_lower = author.strip().lower()
-          
           ok = True
-          if author_lower != required_author:
-            ok = False
           if required_line not in body:
             ok = False
           
@@ -73,13 +95,13 @@ jobs:
             f.write(f"is_starter={'true' if ok else 'false'}\n")
 
       - name: Checkout student repo
-        if: ${{ steps.starter.outputs.is_starter == 'true' }}
+        if: ${{ steps.starter.outputs.is_starter == 'true' && steps.concurrent_check.outputs.skip != 'true' }}
         uses: actions/checkout@v4
         with:
           path: student
 
       - name: Checkout tasks repo
-        if: ${{ steps.starter.outputs.is_starter == 'true' }}
+        if: ${{ steps.starter.outputs.is_starter == 'true' && steps.concurrent_check.outputs.skip != 'true' }}
         uses: actions/checkout@v4
         with:
           repository: Pau1R/python2026_tasks
@@ -87,7 +109,7 @@ jobs:
           path: tasks
 
       - name: Resolve test metadata
-        if: ${{ steps.starter.outputs.is_starter == 'true' }}
+        if: ${{ steps.starter.outputs.is_starter == 'true' && steps.concurrent_check.outputs.skip != 'true' }}
         id: meta
         shell: python
         run: |
@@ -156,7 +178,7 @@ jobs:
               f.write(f'{k}={out[k]}\n')
 
       - name: Run test loop
-        if: ${{ steps.starter.outputs.is_starter == 'true' }}
+        if: ${{ steps.starter.outputs.is_starter == 'true' && steps.concurrent_check.outputs.skip != 'true' }}
         shell: python
         env:
           TEST_NUMBER: ${{ steps.meta.outputs.test_number }}
@@ -552,15 +574,13 @@ jobs:
             nodes0 = d0['comments']['nodes']
 
             body0 = (d0.get('body') or '').strip()
-            if normalize_mc_body_for_compare(body0) != initial_norm:
-              # Restore template if student edited content beyond checkboxes.
-              update_discussion_body(discussion_node_id, initial_template)
-              time.sleep(3)
-              continue
-
             if initial_start_checked(body0):
               started = True
               break
+
+            # Only restore the template if the student removed the required start line.
+            if 'нажмите' not in body0.lower() or 'запуска теста' not in body0.lower():
+              update_discussion_body(discussion_node_id, initial_template)
 
             time.sleep(3)
 
@@ -878,6 +898,6 @@ jobs:
           print(f'Done. Score={score}, percent={percent}')
 
       - name: Skip non-starter
-        if: ${{ steps.starter.outputs.is_starter != 'true' }}
+        if: ${{ steps.starter.outputs.is_starter != 'true' || steps.concurrent_check.outputs.skip == 'true' }}
         run: |
           echo "Not a starter event. Skipping."
