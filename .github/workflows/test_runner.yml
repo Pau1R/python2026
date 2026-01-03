@@ -238,6 +238,7 @@ jobs:
                   number
                   title
                   url
+                  body
                   comments(first: 100) {
                     nodes {
                       id
@@ -255,6 +256,16 @@ jobs:
             if not node:
               raise RuntimeError('Discussion not found by node id')
             return node
+
+          def update_discussion_body(discussion_id: str, body: str):
+            q = """
+            mutation($id:ID!, $body:String!) {
+              updateDiscussion(input:{discussionId:$id, body:$body}) {
+                discussion { id }
+              }
+            }
+            """
+            gh_graphql(q, {'id': discussion_id, 'body': body})
 
           def update_discussion_comment(comment_node_id: str, body: str):
             q = """
@@ -385,7 +396,11 @@ jobs:
             path = tasks_root / 'misc' / 'inital_test_page.txt'
             if not path.is_file():
               raise RuntimeError(f'Initial template not found: {path}')
-            return path.read_text(encoding='utf-8').strip()
+            template = path.read_text(encoding='utf-8').strip()
+            start_line = '- [ ] ← нажмите и подождите 10 секунд для запуска теста'
+            if start_line not in template:
+              template = (template + '\n\n' + start_line).strip()
+            return template
 
           def initial_start_checked(body: str) -> bool:
             # Start checkbox line in template: "- [ ] ← ..."
@@ -492,15 +507,10 @@ jobs:
 
           discussion = get_discussion()
           comments = discussion['comments']['nodes']
-          if not comments:
-            raise SystemExit('Discussion has no comments')
 
           # Marker verification: any comment authored by teacher_marker_login must exist.
           if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in comments):
             raise SystemExit('Marker verification failed: teacher comment not found')
-
-          # Assume the first comment is the active question container.
-          question_comment_id = comments[0]['id']
 
           # Start gate: validate initial template and wait for student to check start box.
           initial_template = load_initial_template()
@@ -511,21 +521,15 @@ jobs:
           while time.time() - start_wait_begin < 15 * 60:
             d0 = get_discussion()
             nodes0 = d0['comments']['nodes']
-            if not nodes0:
-              raise SystemExit('Discussion has no comments during start wait')
-            c0 = nodes0[0]
-            if c0['id'] != question_comment_id:
-              # Something changed. Keep using the original comment id.
-              pass
 
             # Marker still required.
             if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in nodes0):
               raise SystemExit('Marker verification failed during start wait')
 
-            body0 = (c0.get('body') or '').strip()
+            body0 = (d0.get('body') or '').strip()
             if normalize_mc_body_for_compare(body0) != initial_norm:
               # Restore template if student edited content beyond checkboxes.
-              update_discussion_comment(question_comment_id, initial_template)
+              update_discussion_body(discussion_node_id, initial_template)
               time.sleep(3)
               continue
 
@@ -557,7 +561,7 @@ jobs:
             else:
               body, option_perm = build_mc_body(q, question_index=idx, total_questions=total)
 
-            update_discussion_comment(question_comment_id, body)
+            update_discussion_body(discussion_node_id, body)
             expected_norm = normalize_mc_body_for_compare(body) if not is_detailed(q) else None
 
             # Wait for an answer.
@@ -577,55 +581,44 @@ jobs:
               if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in nodes):
                 raise SystemExit('Marker verification failed mid-run')
 
-              # Locate current question comment.
-              q_comment = None
-              for c in nodes:
-                if c['id'] == question_comment_id:
-                  q_comment = c
-                  break
-              if not q_comment:
-                raise SystemExit('Question comment missing')
+              question_body = (d.get('body') or '')
 
               if is_detailed(q):
-                # Find newest non-teacher comment which is not the question comment itself.
+                # Find newest non-teacher comment.
                 for c in reversed(nodes):
                   author = (c.get('author') or {}).get('login')
-                  if c['id'] == question_comment_id:
-                    continue
                   if author in (None, teacher_marker_login):
                     continue
                   detailed_text = (c.get('body') or '').strip()
                   if detailed_text:
+                    print(f"Captured detailed answer comment (len={len(detailed_text)}). Deleting comment id={c['id']}")
                     # cleanup extra comment
                     delete_discussion_comment(c['id'])
                     answered = True
                     break
               else:
-                kind, choice = parse_first_checked_index(q_comment.get('body') or '')
+                kind, choice = parse_first_checked_index(question_body)
+                if kind == 'choice':
+                  print(f"Parsed checkbox choice from discussion body: {choice}")
+                elif kind == 'finish':
+                  print('Parsed finish request from discussion body')
 
                 # Template enforcement for MC: restore if content changed beyond checkbox states.
-                current_body = (q_comment.get('body') or '')
+                current_body = question_body
                 if expected_norm is not None and normalize_mc_body_for_compare(current_body) != expected_norm:
-                  update_discussion_comment(question_comment_id, body)
+                  update_discussion_body(discussion_node_id, body)
                   continue
 
                 if kind == 'finish':
                   # Ask for confirmation.
                   confirm_body = build_finish_confirm_body()
-                  update_discussion_comment(question_comment_id, confirm_body)
+                  update_discussion_body(discussion_node_id, confirm_body)
                   confirm_start = time.time()
                   while time.time() - confirm_start < 120:
                     time.sleep(3)
                     d2 = get_discussion()
                     nodes2 = d2['comments']['nodes']
-                    q2 = None
-                    for c2 in nodes2:
-                      if c2['id'] == question_comment_id:
-                        q2 = c2
-                        break
-                    if not q2:
-                      raise SystemExit('Question comment missing during finish confirm')
-                    decision = parse_finish_confirm(q2.get('body') or '')
+                    decision = parse_finish_confirm((d2.get('body') or ''))
                     if decision == 'yes':
                       answers_log.append({'id': q.get('id'), 'finish': True})
                       answered = True
@@ -633,7 +626,7 @@ jobs:
                       break
                     if decision == 'no':
                       # Restore original question.
-                      update_discussion_comment(question_comment_id, body)
+                      update_discussion_body(discussion_node_id, body)
                       break
                   if selected == 'finish':
                     break
@@ -641,11 +634,11 @@ jobs:
                   # Validate selections.
                   selections = list(choice)
                   if any((x < 1 or x > 6) for x in selections):
-                    update_discussion_comment(question_comment_id, body)
+                    update_discussion_body(discussion_node_id, body)
                     continue
                   if 6 in selections and len(selections) > 1:
                     # Do not allow mixing "I do not know" with other answers.
-                    update_discussion_comment(question_comment_id, body)
+                    update_discussion_body(discussion_node_id, body)
                     continue
                   selected = selections
                   answered = True
@@ -654,13 +647,14 @@ jobs:
                 break
 
               # Delete unrelated extra comments (student spamming).
-              for c in list(nodes)[1:]:
-                author = (c.get('author') or {}).get('login')
-                if author and author != teacher_marker_login and c['id'] != question_comment_id:
-                  try:
-                    delete_discussion_comment(c['id'])
-                  except Exception:
-                    pass
+              if not is_detailed(q):
+                for c in list(nodes)[1:]:
+                  author = (c.get('author') or {}).get('login')
+                  if author and author != teacher_marker_login:
+                    try:
+                      delete_discussion_comment(c['id'])
+                    except Exception:
+                      pass
 
             if not answered:
               raise SystemExit('Timeout waiting for answer')
