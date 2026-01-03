@@ -128,9 +128,17 @@ jobs:
           if not candidates:
             raise SystemExit('No test link files found under lessons/*/tests/')
 
+          print(f'Found {len(candidates)} test link file candidates')
+          for p in sorted(candidates)[:20]:
+            print(f' - candidate: {p}')
+          if len(candidates) > 20:
+            print(f' ... and {len(candidates) - 20} more')
+
           expected_discussion_node_id = (os.environ.get('DISCUSSION_NODE_ID') or '').strip()
           if not expected_discussion_node_id:
             raise SystemExit('Missing DISCUSSION_NODE_ID from starter step')
+
+          print(f'Expected discussion_node_id from event: {expected_discussion_node_id}')
 
           selected = None
           content = None
@@ -138,6 +146,10 @@ jobs:
             text = path.read_text(encoding='utf-8')
             m = re.search(r'^\s*discussion_node_id:\s*(.+?)\s*$', text, flags=re.MULTILINE)
             node_id = (m.group(1).strip() if m else '')
+            if node_id:
+              print(f'Scanned {path}: discussion_node_id={node_id}')
+            else:
+              print(f'Scanned {path}: discussion_node_id not found')
             if node_id == expected_discussion_node_id:
               selected = path
               content = text
@@ -145,6 +157,8 @@ jobs:
 
           if selected is None:
             raise SystemExit(f'No link file matched discussion_node_id={expected_discussion_node_id}')
+
+          print(f'Selected link file: {selected}')
           
           # Extract discussion_node_id from the file
           def grab(key: str) -> str:
