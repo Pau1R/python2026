@@ -89,6 +89,7 @@ jobs:
             raise SystemExit('GITHUB_OUTPUT missing')
           with open(out, 'a', encoding='utf-8') as f:
             f.write(f"is_starter={'true' if ok else 'false'}\n")
+            f.write(f"discussion_node_id={discussion_node_id}\n")
 
       - name: Checkout student repo
         if: ${{ steps.starter.outputs.is_starter == 'true' && steps.concurrent_check.outputs.skip != 'true' }}
@@ -108,6 +109,8 @@ jobs:
         if: ${{ steps.starter.outputs.is_starter == 'true' && steps.concurrent_check.outputs.skip != 'true' }}
         id: meta
         shell: python
+        env:
+          DISCUSSION_NODE_ID: ${{ steps.starter.outputs.discussion_node_id }}
         run: |
           import os
           import re
@@ -125,10 +128,23 @@ jobs:
           if not candidates:
             raise SystemExit('No test link files found under lessons/*/tests/')
 
-          # For now, just take the first test file found
-          # In the future, we might need to match based on discussion URL or other criteria
-          selected = candidates[0]
-          content = selected.read_text(encoding='utf-8')
+          expected_discussion_node_id = (os.environ.get('DISCUSSION_NODE_ID') or '').strip()
+          if not expected_discussion_node_id:
+            raise SystemExit('Missing DISCUSSION_NODE_ID from starter step')
+
+          selected = None
+          content = None
+          for path in candidates:
+            text = path.read_text(encoding='utf-8')
+            m = re.search(r'^\s*discussion_node_id:\s*(.+?)\s*$', text, flags=re.MULTILINE)
+            node_id = (m.group(1).strip() if m else '')
+            if node_id == expected_discussion_node_id:
+              selected = path
+              content = text
+              break
+
+          if selected is None:
+            raise SystemExit(f'No link file matched discussion_node_id={expected_discussion_node_id}')
           
           # Extract discussion_node_id from the file
           def grab(key: str) -> str:
