@@ -12,7 +12,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      discussions: write
 
     steps:
       - name: Verify starter
@@ -164,6 +165,7 @@ jobs:
           TEACHER_MARKER_LOGIN: ${{ steps.meta.outputs.teacher_marker_login || '' }}
           TRACKER_DISCUSSION_ID: ${{ steps.meta.outputs.tracker_discussion_id }}
           TRACKER_COMMENT_ID: ${{ steps.meta.outputs.tracker_comment_id }}
+          STUDENT_TOKEN: ${{ github.token }}
           TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || '' }}
         run: |
@@ -187,6 +189,7 @@ jobs:
           teacher_marker_login = (os.environ.get('TEACHER_MARKER_LOGIN') or '').strip()
           tracker_discussion_id = os.environ['TRACKER_DISCUSSION_ID'].strip()
           tracker_comment_id = os.environ['TRACKER_COMMENT_ID'].strip()
+          student_token = (os.environ.get('STUDENT_TOKEN') or '').strip()
           teacher_pat = os.environ['TEACHER_PAT'].strip()
           openrouter_key = (os.environ.get('OPENROUTER_API_KEY') or '').strip()
 
@@ -197,16 +200,19 @@ jobs:
           if not tasks_root.is_dir():
             raise SystemExit('tasks/ checkout not found')
 
+          if not student_token:
+            raise SystemExit('Missing STUDENT_TOKEN')
+
           if not teacher_pat:
             raise SystemExit('Missing TEACHER_PAT')
 
           owner = student_github
           repo = 'python2026'
 
-          def gh_request(url: str, *, method: str = 'GET', headers=None, data=None, accept=None):
+          def gh_request(url: str, *, token: str, method: str = 'GET', headers=None, data=None, accept=None):
             headers = headers or {}
             h = {
-              'Authorization': f'Bearer {teacher_pat}',
+              'Authorization': f'Bearer {token}',
               'Accept': accept or 'application/vnd.github+json',
               **headers,
             }
@@ -214,10 +220,11 @@ jobs:
             with urllib.request.urlopen(req, timeout=60) as resp:
               return resp.status, resp.read()
 
-          def gh_graphql(query: str, variables: dict):
+          def gh_graphql(query: str, variables: dict, *, token: str):
             payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
             status, body = gh_request(
               'https://api.github.com/graphql',
+              token=token,
               method='POST',
               headers={'Content-Type': 'application/json'},
               data=payload,
@@ -228,6 +235,12 @@ jobs:
             if obj.get('errors'):
               raise RuntimeError(f"GraphQL errors: {obj['errors']}")
             return obj['data']
+
+          def gh_graphql_student(query: str, variables: dict):
+            return gh_graphql(query, variables, token=student_token)
+
+          def gh_graphql_teacher(query: str, variables: dict):
+            return gh_graphql(query, variables, token=teacher_pat)
 
           def get_discussion():
             q = """
@@ -251,7 +264,7 @@ jobs:
               }
             }
             """
-            data = gh_graphql(q, {'id': discussion_node_id})
+            data = gh_graphql_student(q, {'id': discussion_node_id})
             node = data.get('node')
             if not node:
               raise RuntimeError('Discussion not found by node id')
@@ -265,7 +278,7 @@ jobs:
               }
             }
             """
-            gh_graphql(q, {'id': discussion_id, 'body': body})
+            gh_graphql_student(q, {'id': discussion_id, 'body': body})
 
           def update_discussion_comment(comment_node_id: str, body: str):
             q = """
@@ -275,7 +288,7 @@ jobs:
               }
             }
             """
-            gh_graphql(q, {'id': comment_node_id, 'body': body})
+            gh_graphql_student(q, {'id': comment_node_id, 'body': body})
 
           def add_discussion_comment(discussion_id: str, body: str) -> str:
             q = """
@@ -285,7 +298,7 @@ jobs:
               }
             }
             """
-            data = gh_graphql(q, {'id': discussion_id, 'body': body})
+            data = gh_graphql_student(q, {'id': discussion_id, 'body': body})
             return data['addDiscussionComment']['comment']['id']
 
           def delete_discussion(discussion_id: str):
@@ -296,7 +309,7 @@ jobs:
               }
             }
             """
-            gh_graphql(q, {'id': discussion_id})
+            gh_graphql_student(q, {'id': discussion_id})
 
           def delete_discussion_comment(comment_node_id: str):
             q = """
@@ -306,7 +319,7 @@ jobs:
               }
             }
             """
-            gh_graphql(q, {'id': comment_node_id})
+            gh_graphql_student(q, {'id': comment_node_id})
 
           def load_test_json() -> dict:
             base = tasks_root / 'lessons' / lesson_folder / 'tests'
@@ -422,7 +435,7 @@ jobs:
               }
             }
             """
-            data = gh_graphql(q, {'id': tracker_comment_id})
+            data = gh_graphql_teacher(q, {'id': tracker_comment_id})
             node = data.get('node') or {}
             body = (node.get('body') or '').strip()
             lines = body.splitlines() if body else []
@@ -436,14 +449,21 @@ jobs:
                 updated.append(line)
             if not found:
               updated.append(f'{student_short}: {done}/{total_}')
-            update_discussion_comment(tracker_comment_id, '\n'.join(updated).strip())
+            q2 = """
+            mutation($id:ID!, $body:String!) {
+              updateDiscussionComment(input:{commentId:$id, body:$body}) {
+                comment { id }
+              }
+            }
+            """
+            gh_graphql_teacher(q2, {'id': tracker_comment_id, 'body': '\n'.join(updated).strip()})
 
-          def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str):
+          def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str, *, token: str):
             url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
             url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
 
             sha = None
-            status, body = gh_request(url, method='GET')
+            status, body = gh_request(url, token=token, method='GET')
             if status == 200:
               sha = json.loads(body).get('sha')
             elif status == 404:
@@ -460,6 +480,7 @@ jobs:
 
             status2, body2 = gh_request(
               url,
+              token=token,
               method='PUT',
               headers={'Content-Type': 'application/json'},
               data=json.dumps(payload).encode('utf-8'),
@@ -467,11 +488,11 @@ jobs:
             if status2 not in (200, 201):
               raise RuntimeError(f'Failed write {owner_}/{repo_}/{path}: HTTP {status2}: {body2[:500]!r}')
 
-          def delete_contents_file(owner_: str, repo_: str, path: str, message: str):
+          def delete_contents_file(owner_: str, repo_: str, path: str, message: str, *, token: str):
             url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
             url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
 
-            status, body = gh_request(url, method='GET')
+            status, body = gh_request(url, token=token, method='GET')
             if status == 404:
               return
             if status != 200:
@@ -486,6 +507,7 @@ jobs:
             }
             status2, body2 = gh_request(
               url,
+              token=token,
               method='DELETE',
               headers={'Content-Type': 'application/json'},
               data=json.dumps(payload).encode('utf-8'),
@@ -803,8 +825,8 @@ jobs:
           student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
           teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
 
-          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})')
-          write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})')
+          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=student_token)
+          write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
 
           # Cleanup comments, leave one final comment only.
           try:
@@ -832,7 +854,7 @@ jobs:
           # Cleanup link file
           link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
           try:
-            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})')
+            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})', token=student_token)
           except Exception:
             pass
 
