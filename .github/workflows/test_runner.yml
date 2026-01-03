@@ -520,12 +520,26 @@ jobs:
 
             sha = None
             status, body = gh_request(url, token=token, method='GET')
+            
+            # If 404, try to create parent directories
+            if status == 404 and '/' in path:
+                print('File not found, attempting to create directories...')
+                parent_path = '/'.join(path_parts[:-1])
+                if parent_path:
+                    # Create a .gitkeep file to establish the directory
+                    try:
+                        write_contents_file(owner_, repo_, parent_path + '/.gitkeep', '', 'Create directory', token=token)
+                        # Try again for the actual file
+                        status, body = gh_request(url, token=token, method='GET')
+                    except Exception as e:
+                        print(f'Failed to create directory: {e}')
+            
             if status == 200:
-              sha = json.loads(body).get('sha')
+                sha = json.loads(body).get('sha')
             elif status == 404:
-              sha = None
+                sha = None
             else:
-              raise RuntimeError(f'Unexpected status {status} checking {owner_}/{repo_}/{path}: {body[:200]!r}')
+                raise RuntimeError(f'Unexpected status {status} checking {owner_}/{repo_}/{path}: {body[:200]!r}')
 
             payload = {
               'message': message,
