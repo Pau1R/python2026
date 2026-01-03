@@ -129,7 +129,7 @@ jobs:
             'tracker_comment_id': grab('tracker_comment_id'),
           }
 
-          missing = [k for k, v in out.items() if not v]
+          missing = [k for k, v in out.items() if not v and k != 'teacher_marker_login']
           if missing:
             raise SystemExit(f'Missing fields in link file {selected}: {missing}')
 
@@ -161,7 +161,7 @@ jobs:
           STUDENT_SHORT: ${{ steps.meta.outputs.student_short }}
           STUDENT_GITHUB: ${{ steps.meta.outputs.student_github }}
           DISCUSSION_NODE_ID: ${{ steps.meta.outputs.discussion_node_id }}
-          TEACHER_MARKER_LOGIN: ${{ steps.meta.outputs.teacher_marker_login }}
+          TEACHER_MARKER_LOGIN: ${{ steps.meta.outputs.teacher_marker_login || '' }}
           TRACKER_DISCUSSION_ID: ${{ steps.meta.outputs.tracker_discussion_id }}
           TRACKER_COMMENT_ID: ${{ steps.meta.outputs.tracker_comment_id }}
           TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
@@ -184,7 +184,7 @@ jobs:
           student_short = os.environ['STUDENT_SHORT'].strip()
           student_github = os.environ['STUDENT_GITHUB'].strip()
           discussion_node_id = os.environ['DISCUSSION_NODE_ID'].strip()
-          teacher_marker_login = os.environ['TEACHER_MARKER_LOGIN'].strip()
+          teacher_marker_login = (os.environ.get('TEACHER_MARKER_LOGIN') or '').strip()
           tracker_discussion_id = os.environ['TRACKER_DISCUSSION_ID'].strip()
           tracker_comment_id = os.environ['TRACKER_COMMENT_ID'].strip()
           teacher_pat = os.environ['TEACHER_PAT'].strip()
@@ -508,10 +508,6 @@ jobs:
           discussion = get_discussion()
           comments = discussion['comments']['nodes']
 
-          # Marker verification: any comment authored by teacher_marker_login must exist.
-          if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in comments):
-            raise SystemExit('Marker verification failed: teacher comment not found')
-
           # Start gate: validate initial template and wait for student to check start box.
           initial_template = load_initial_template()
           initial_norm = normalize_mc_body_for_compare(initial_template)
@@ -521,10 +517,6 @@ jobs:
           while time.time() - start_wait_begin < 15 * 60:
             d0 = get_discussion()
             nodes0 = d0['comments']['nodes']
-
-            # Marker still required.
-            if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in nodes0):
-              raise SystemExit('Marker verification failed during start wait')
 
             body0 = (d0.get('body') or '').strip()
             if normalize_mc_body_for_compare(body0) != initial_norm:
@@ -577,17 +569,15 @@ jobs:
               d = get_discussion()
               nodes = d['comments']['nodes']
 
-              # Re-verify marker each cycle.
-              if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in nodes):
-                raise SystemExit('Marker verification failed mid-run')
-
               question_body = (d.get('body') or '')
 
               if is_detailed(q):
                 # Find newest non-teacher comment.
                 for c in reversed(nodes):
                   author = (c.get('author') or {}).get('login')
-                  if author in (None, teacher_marker_login):
+                  if author is None:
+                    continue
+                  if teacher_marker_login and author == teacher_marker_login:
                     continue
                   detailed_text = (c.get('body') or '').strip()
                   if detailed_text:
@@ -650,7 +640,7 @@ jobs:
               if not is_detailed(q):
                 for c in list(nodes)[1:]:
                   author = (c.get('author') or {}).get('login')
-                  if author and author != teacher_marker_login:
+                  if author and (not teacher_marker_login or author != teacher_marker_login):
                     try:
                       delete_discussion_comment(c['id'])
                     except Exception:
