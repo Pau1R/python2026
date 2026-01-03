@@ -19,13 +19,13 @@ jobs:
         id: starter
         shell: python
         env:
-          COMMENT_AUTHOR: ${{ inputs.comment_author }}
-          COMMENT_BODY: ${{ inputs.comment_body }}
+          DISCUSSION_AUTHOR: ${{ inputs.discussion_author }}
+          DISCUSSION_BODY: ${{ inputs.discussion_body }}
         run: |
           import os
 
-          author = (os.environ.get('COMMENT_AUTHOR') or '').strip().lower()
-          body = os.environ.get('COMMENT_BODY') or ''
+          author = (os.environ.get('DISCUSSION_AUTHOR') or '').strip().lower()
+          body = os.environ.get('DISCUSSION_BODY') or ''
 
           required_author = 'pau1r'
           required_line = '- [x] ← нажмите и подождите 10 секунд для запуска теста'
