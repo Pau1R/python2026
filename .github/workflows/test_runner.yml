@@ -58,12 +58,15 @@ jobs:
           required_author = 'pau1r'
           required_line = '- [x] ← нажмите и подождите 10 секунд для запуска теста'
           
+          # Convert author to lowercase for comparison
+          author_lower = author.strip().lower()
+          
           print(f"DEBUG: Required author = '{required_author}'")
           print(f"DEBUG: Required line found = {required_line in body}")
 
           ok = True
-          if author != required_author:
-            print(f"DEBUG: Author check failed: '{author}' != '{required_author}'")
+          if author_lower != required_author:
+            print(f"DEBUG: Author check failed: '{author_lower}' != '{required_author}'")
             ok = False
           if required_line not in body:
             print(f"DEBUG: Required line not found in body")
