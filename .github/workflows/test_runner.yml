@@ -214,40 +214,6 @@ jobs:
             with urllib.request.urlopen(req, timeout=60) as resp:
               return resp.status, resp.read()
 
-          _token_login_cache = None
-          _discussion_url_cache = None
-
-          def token_login() -> str:
-            global _token_login_cache
-            if _token_login_cache is not None:
-              return _token_login_cache
-            try:
-              status, body = gh_request('https://api.github.com/user', method='GET')
-              if status != 200:
-                _token_login_cache = ''
-                return _token_login_cache
-              obj = json.loads(body)
-              _token_login_cache = (obj.get('login') or '').strip()
-              return _token_login_cache
-            except Exception:
-              _token_login_cache = ''
-              return _token_login_cache
-
-          def discussion_target_repo() -> str:
-            return f'{owner}/{repo}'
-
-          def discussion_url() -> str:
-            global _discussion_url_cache
-            if _discussion_url_cache is not None:
-              return _discussion_url_cache
-            try:
-              d = get_discussion()
-              _discussion_url_cache = (d.get('url') or '').strip()
-              return _discussion_url_cache
-            except Exception:
-              _discussion_url_cache = ''
-              return _discussion_url_cache
-
           def gh_graphql(query: str, variables: dict):
             payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
             status, body = gh_request(
@@ -260,24 +226,7 @@ jobs:
               raise RuntimeError(f'GraphQL HTTP {status}: {body[:500]!r}')
             obj = json.loads(body)
             if obj.get('errors'):
-              errors = obj['errors']
-              for e in errors:
-                if (
-                  (e.get('type') == 'FORBIDDEN' or 'forbidden' in (e.get('message') or '').lower())
-                  and (e.get('path') or [])[:1] == ['updateDiscussion']
-                  and 'personal access token' in (e.get('message') or '').lower()
-                ):
-                  who = token_login() or '<unknown>'
-                  target_repo = discussion_target_repo()
-                  target_url = discussion_url() or '<unknown>'
-                  raise SystemExit(
-                    f'Cannot update discussion body (updateDiscussion): token is forbidden. Token user: {who}. '
-                    f'Target repo: {target_repo}. Discussion url: {target_url}. '
-                    'Fix: use a token that has permission to write Discussions in the target repo. '
-                    'If you use a fine-grained PAT, enable Repository permissions: Discussions: Read and write. '
-                    'Also ensure the token owner has access to the student repo.'
-                  )
-              raise RuntimeError(f"GraphQL errors: {errors}")
+              raise RuntimeError(f"GraphQL errors: {obj['errors']}")
             return obj['data']
 
           def get_discussion():
@@ -309,8 +258,6 @@ jobs:
             return node
 
           def update_discussion_body(discussion_id: str, body: str):
-            url = discussion_url() or '<unknown>'
-            print(f'Updating discussion body: repo={discussion_target_repo()} discussion_node_id={discussion_id} url={url}')
             q = """
             mutation($id:ID!, $body:String!) {
               updateDiscussion(input:{discussionId:$id, body:$body}) {
