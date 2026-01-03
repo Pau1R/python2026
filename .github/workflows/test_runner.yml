@@ -6,7 +6,9 @@ on:
       TEACHER_PAT:
         required: true
       OPENROUTER_API_KEY:
-        required: false
+        required: true
+      TASKS_REPO_CLASSIC_TOKEN:
+        required: true
 
 permissions:
   contents: write
@@ -167,6 +169,7 @@ jobs:
           TRACKER_DISCUSSION_ID: ${{ steps.meta.outputs.tracker_discussion_id }}
           TRACKER_COMMENT_ID: ${{ steps.meta.outputs.tracker_comment_id }}
           STUDENT_TOKEN: ${{ github.token }}
+          TASKS_REPO_CLASSIC_TOKEN: ${{ secrets.TASKS_REPO_CLASSIC_TOKEN }}
           TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || '' }}
         run: |
@@ -191,6 +194,7 @@ jobs:
           tracker_discussion_id = os.environ['TRACKER_DISCUSSION_ID'].strip()
           tracker_comment_id = os.environ['TRACKER_COMMENT_ID'].strip()
           student_token = (os.environ.get('STUDENT_TOKEN') or '').strip()
+          tasks_repo_classic_token = os.environ['TASKS_REPO_CLASSIC_TOKEN'].strip()
           teacher_pat = os.environ['TEACHER_PAT'].strip()
           openrouter_key = (os.environ.get('OPENROUTER_API_KEY') or '').strip()
 
@@ -203,6 +207,9 @@ jobs:
 
           if not student_token:
             raise SystemExit('Missing STUDENT_TOKEN')
+
+          if not tasks_repo_classic_token:
+            raise SystemExit('Missing TASKS_REPO_CLASSIC_TOKEN')
 
           if not teacher_pat:
             raise SystemExit('Missing TEACHER_PAT')
@@ -243,6 +250,9 @@ jobs:
           def gh_graphql_teacher(query: str, variables: dict):
             return gh_graphql(query, variables, token=teacher_pat)
 
+          def gh_graphql_classic(query: str, variables: dict):
+            return gh_graphql(query, variables, token=tasks_repo_classic_token)
+
           def get_discussion():
             q = """
             query($id:ID!) {
@@ -279,7 +289,7 @@ jobs:
               }
             }
             """
-            gh_graphql_student(q, {'id': discussion_id, 'body': body})
+            gh_graphql_classic(q, {'id': discussion_id, 'body': body})
 
           def update_discussion_comment(comment_node_id: str, body: str):
             q = """
