@@ -24,19 +24,15 @@ jobs:
           import os
           import json
 
-          # Parse GitHub context to see what's available
+          # Parse GitHub context
           github_context = json.loads(os.environ.get('GITHUB_CONTEXT', '{}'))
-          print("DEBUG: Available GitHub context keys:", list(github_context.keys()))
           
-          # Try to get discussion author and body from available context
-          # This will depend on how the workflow is triggered
+          # Get discussion author and body from event
           author = ''
           body = ''
           
-          # If triggered from discussion comment
           if 'event' in github_context:
               event = github_context['event']
-              print("DEBUG: Event type:", github_context.get('event_name'))
               
               # Try different possible locations for the data
               if 'comment' in event:
@@ -50,10 +46,6 @@ jobs:
               if 'sender' in event:
                   if not author:
                       author = event['sender'].get('login', '')
-
-          print(f"DEBUG: Discussion author = '{author}'")
-          print(f"DEBUG: Discussion body length = {len(body)}")
-          print(f"DEBUG: Discussion body = '{body[:200]}...'")  # First 200 chars
           
           required_author = 'pau1r'
           required_line = '- [x] ← нажмите и подождите 10 секунд для запуска теста'
@@ -61,18 +53,11 @@ jobs:
           # Convert author to lowercase for comparison
           author_lower = author.strip().lower()
           
-          print(f"DEBUG: Required author = '{required_author}'")
-          print(f"DEBUG: Required line found = {required_line in body}")
-
           ok = True
           if author_lower != required_author:
-            print(f"DEBUG: Author check failed: '{author_lower}' != '{required_author}'")
             ok = False
           if required_line not in body:
-            print(f"DEBUG: Required line not found in body")
             ok = False
-
-          print(f"DEBUG: Final result = {ok}")
           
           out = os.environ.get('GITHUB_OUTPUT')
           if not out:
