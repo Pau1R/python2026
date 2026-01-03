@@ -506,16 +506,9 @@ jobs:
           def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str, *, token: str):
             url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
             url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
-            
-            print(f'DEBUG write_contents_file:')
-            print(f'  url = {url}')
-            print(f'  token prefix = {token[:10]}...')
-            print(f'  owner_ = {owner_}')
-            print(f'  repo_ = {repo_}')
 
             sha = None
             status, body = gh_request(url, token=token, method='GET')
-            print(f'DEBUG: GET response status = {status}')
             if status == 200:
               sha = json.loads(body).get('sha')
             elif status == 404:
@@ -601,7 +594,7 @@ jobs:
             if 'нажмите' not in body0.lower() or 'запуска теста' not in body0.lower():
               update_discussion_body(discussion_node_id, initial_template)
 
-            time.sleep(3)
+            time.sleep(1)
 
           if not started:
             raise SystemExit('Student did not start the test within 15 minutes')
@@ -637,7 +630,7 @@ jobs:
             detailed_text = None
 
             while time.time() - start < 45 * 60:
-              time.sleep(3)
+              time.sleep(1)
               d = get_discussion()
               nodes = d['comments']['nodes']
 
@@ -677,7 +670,7 @@ jobs:
                   update_discussion_body(discussion_node_id, confirm_body)
                   confirm_start = time.time()
                   while time.time() - confirm_start < 120:
-                    time.sleep(3)
+                    time.sleep(1)
                     d2 = get_discussion()
                     nodes2 = d2['comments']['nodes']
                     decision = parse_finish_confirm((d2.get('body') or ''))
@@ -874,13 +867,6 @@ jobs:
 
           student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
           teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
-
-          # Debug output before writing
-          print(f'DEBUG: About to write student result:')
-          print(f'  owner = {owner}')
-          print(f'  repo = {repo}')
-          print(f'  student_result_path = {student_result_path}')
-          print(f'  student_token prefix = {student_token[:10]}...')
 
           write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=student_token)
           write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
