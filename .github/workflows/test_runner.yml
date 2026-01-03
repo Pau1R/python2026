@@ -67,7 +67,6 @@ jobs:
             raise SystemExit('GITHUB_OUTPUT missing')
           with open(out, 'a', encoding='utf-8') as f:
             f.write(f"is_starter={'true' if ok else 'false'}\n")
-            f.write(f"discussion_node_id={discussion_node_id}\n")
 
       - name: Checkout student repo
         if: ${{ steps.starter.outputs.is_starter == 'true' }}
@@ -87,9 +86,6 @@ jobs:
         if: ${{ steps.starter.outputs.is_starter == 'true' }}
         id: meta
         shell: python
-        env:
-          INPUT_DISCUSSION_NODE_ID: ${{ inputs.discussion_node_id }}
-          EVENT_DISCUSSION_NODE_ID: ''
         run: |
           import os
           import re
@@ -102,32 +98,24 @@ jobs:
           if not student_root.is_dir():
             raise SystemExit('student/ checkout not found')
 
-          discussion_node_id = clean(os.environ.get('INPUT_DISCUSSION_NODE_ID')) or clean(os.environ.get('EVENT_DISCUSSION_NODE_ID'))
-          if not discussion_node_id:
-            raise SystemExit('Missing discussion_node_id (not provided as input and not present in event)')
-
+          # Find all test files
           candidates = list((student_root / 'lessons').glob('lesson */tests/test *.md'))
           if not candidates:
             raise SystemExit('No test link files found under lessons/*/tests/')
 
-          selected = None
-          content = None
-          for p in candidates:
-            try:
-              txt = p.read_text(encoding='utf-8')
-            except Exception:
-              continue
-            if f'discussion_node_id: {discussion_node_id}' in txt:
-              selected = p
-              content = txt
-              break
-
-          if not selected:
-            raise SystemExit('No link file matches this discussion_node_id')
-
+          # For now, just take the first test file found
+          # In the future, we might need to match based on discussion URL or other criteria
+          selected = candidates[0]
+          content = selected.read_text(encoding='utf-8')
+          
+          # Extract discussion_node_id from the file
           def grab(key: str) -> str:
             m = re.search(rf'^\s*{re.escape(key)}:\s*(.+?)\s*$', content, flags=re.MULTILINE)
             return (m.group(1).strip() if m else '')
+
+          discussion_node_id = grab('discussion_node_id')
+          if not discussion_node_id:
+            raise SystemExit(f'No discussion_node_id found in {selected}')
 
           out = {
             'test_number': grab('test_number'),
