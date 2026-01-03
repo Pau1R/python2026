@@ -8,12 +8,13 @@ on:
       OPENROUTER_API_KEY:
         required: false
 
+permissions:
+  contents: write
+  discussions: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      discussions: write
 
     steps:
       - name: Verify starter
