@@ -19,13 +19,37 @@ jobs:
         id: starter
         shell: python
         env:
-          DISCUSSION_AUTHOR: ${{ inputs.discussion_author }}
-          DISCUSSION_BODY: ${{ inputs.discussion_body }}
+          GITHUB_CONTEXT: ${{ toJson(github) }}
         run: |
           import os
+          import json
 
-          author = (os.environ.get('DISCUSSION_AUTHOR') or '').strip().lower()
-          body = os.environ.get('DISCUSSION_BODY') or ''
+          # Parse GitHub context to see what's available
+          github_context = json.loads(os.environ.get('GITHUB_CONTEXT', '{}'))
+          print("DEBUG: Available GitHub context keys:", list(github_context.keys()))
+          
+          # Try to get discussion author and body from available context
+          # This will depend on how the workflow is triggered
+          author = ''
+          body = ''
+          
+          # If triggered from discussion comment
+          if 'event' in github_context:
+              event = github_context['event']
+              print("DEBUG: Event type:", github_context.get('event_name'))
+              
+              # Try different possible locations for the data
+              if 'comment' in event:
+                  author = event['comment'].get('user', {}).get('login', '')
+                  body = event['comment'].get('body', '')
+              elif 'discussion' in event:
+                  author = event['discussion'].get('user', {}).get('login', '')
+                  body = event['discussion'].get('body', '')
+              elif 'body' in event:
+                  body = event.get('body', '')
+              if 'sender' in event:
+                  if not author:
+                      author = event['sender'].get('login', '')
 
           print(f"DEBUG: Discussion author = '{author}'")
           print(f"DEBUG: Discussion body length = {len(body)}")
