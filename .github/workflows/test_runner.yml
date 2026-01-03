@@ -2,19 +2,6 @@ name: Centralized Test Runner
 
 on:
   workflow_call:
-    inputs:
-      discussion_node_id:
-        required: false
-        type: string
-        default: ''
-      comment_author:
-        required: false
-        type: string
-        default: ''
-      comment_body:
-        required: false
-        type: string
-        default: ''
     secrets:
       TEACHER_PAT:
         required: true
