@@ -1,0 +1,820 @@
+name: Centralized Test Runner
+
+on:
+  workflow_call:
+    inputs:
+      discussion_node_id:
+        required: false
+        type: string
+        default: ''
+    secrets:
+      TEACHER_PAT:
+        required: true
+      OPENROUTER_API_KEY:
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout student repo
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Checkout tasks repo
+        uses: actions/checkout@v4
+        with:
+          repository: Pau1R/python2026_tasks
+          token: ${{ secrets.TEACHER_PAT }}
+          path: tasks
+
+      - name: Resolve test metadata
+        id: meta
+        shell: python
+        env:
+          INPUT_DISCUSSION_NODE_ID: ${{ inputs.discussion_node_id }}
+          EVENT_DISCUSSION_NODE_ID: ${{ github.event.discussion.node_id }}
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          def clean(v: str) -> str:
+            return (v or '').strip()
+
+          student_root = Path('student')
+          if not student_root.is_dir():
+            raise SystemExit('student/ checkout not found')
+
+          discussion_node_id = clean(os.environ.get('INPUT_DISCUSSION_NODE_ID')) or clean(os.environ.get('EVENT_DISCUSSION_NODE_ID'))
+          if not discussion_node_id:
+            raise SystemExit('Missing discussion_node_id (not provided as input and not present in event)')
+
+          candidates = list((student_root / 'lessons').glob('lesson */tests/test *.md'))
+          if not candidates:
+            raise SystemExit('No test link files found under lessons/*/tests/')
+
+          selected = None
+          content = None
+          for p in candidates:
+            try:
+              txt = p.read_text(encoding='utf-8')
+            except Exception:
+              continue
+            if f'discussion_node_id: {discussion_node_id}' in txt:
+              selected = p
+              content = txt
+              break
+
+          if not selected:
+            raise SystemExit('No link file matches this discussion_node_id')
+
+          def grab(key: str) -> str:
+            m = re.search(rf'^\s*{re.escape(key)}:\s*(.+?)\s*$', content, flags=re.MULTILINE)
+            return (m.group(1).strip() if m else '')
+
+          out = {
+            'test_number': grab('test_number'),
+            'lesson_folder': grab('lesson_folder'),
+            'lesson_number': grab('lesson_number'),
+            'student_short': grab('student_short'),
+            'student_github': grab('student_github'),
+            'discussion_node_id': discussion_node_id,
+            'teacher_marker_login': grab('teacher_marker_login'),
+            'tracker_discussion_id': grab('tracker_discussion_id'),
+            'tracker_comment_id': grab('tracker_comment_id'),
+          }
+
+          missing = [k for k, v in out.items() if not v]
+          if missing:
+            raise SystemExit(f'Missing fields in link file {selected}: {missing}')
+
+          github_output = os.environ.get('GITHUB_OUTPUT')
+          if not github_output:
+            raise SystemExit('GITHUB_OUTPUT missing')
+
+          with open(github_output, 'a', encoding='utf-8') as f:
+            for k in [
+              'test_number',
+              'lesson_folder',
+              'lesson_number',
+              'student_short',
+              'student_github',
+              'discussion_node_id',
+              'teacher_marker_login',
+              'tracker_discussion_id',
+              'tracker_comment_id',
+            ]:
+              f.write(f'{k}={out[k]}\n')
+
+      - name: Run test loop
+        shell: python
+        env:
+          TEST_NUMBER: ${{ steps.meta.outputs.test_number }}
+          LESSON_FOLDER: ${{ steps.meta.outputs.lesson_folder }}
+          LESSON_NUMBER: ${{ steps.meta.outputs.lesson_number }}
+          STUDENT_SHORT: ${{ steps.meta.outputs.student_short }}
+          STUDENT_GITHUB: ${{ steps.meta.outputs.student_github }}
+          DISCUSSION_NODE_ID: ${{ steps.meta.outputs.discussion_node_id }}
+          TEACHER_MARKER_LOGIN: ${{ steps.meta.outputs.teacher_marker_login }}
+          TRACKER_DISCUSSION_ID: ${{ steps.meta.outputs.tracker_discussion_id }}
+          TRACKER_COMMENT_ID: ${{ steps.meta.outputs.tracker_comment_id }}
+          TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || '' }}
+        run: |
+          import base64
+          import json
+          import os
+          import random
+          import re
+          import sys
+          import time
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          test_number = os.environ['TEST_NUMBER'].strip()
+          lesson_folder = os.environ['LESSON_FOLDER'].strip()
+          lesson_number = os.environ['LESSON_NUMBER'].strip()
+          student_short = os.environ['STUDENT_SHORT'].strip()
+          student_github = os.environ['STUDENT_GITHUB'].strip()
+          discussion_node_id = os.environ['DISCUSSION_NODE_ID'].strip()
+          teacher_marker_login = os.environ['TEACHER_MARKER_LOGIN'].strip()
+          tracker_discussion_id = os.environ['TRACKER_DISCUSSION_ID'].strip()
+          tracker_comment_id = os.environ['TRACKER_COMMENT_ID'].strip()
+          teacher_pat = os.environ['TEACHER_PAT'].strip()
+          openrouter_key = (os.environ.get('OPENROUTER_API_KEY') or '').strip()
+
+          student_root = Path('student')
+          tasks_root = Path('tasks')
+          if not student_root.is_dir():
+            raise SystemExit('student/ checkout not found')
+          if not tasks_root.is_dir():
+            raise SystemExit('tasks/ checkout not found')
+
+          if not teacher_pat:
+            raise SystemExit('Missing TEACHER_PAT')
+
+          owner = student_github
+          repo = 'python2026'
+
+          def gh_request(url: str, *, method: str = 'GET', headers=None, data=None, accept=None):
+            headers = headers or {}
+            h = {
+              'Authorization': f'Bearer {teacher_pat}',
+              'Accept': accept or 'application/vnd.github+json',
+              **headers,
+            }
+            req = urllib.request.Request(url, data=data, method=method, headers=h)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+              return resp.status, resp.read()
+
+          def gh_graphql(query: str, variables: dict):
+            payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
+            status, body = gh_request(
+              'https://api.github.com/graphql',
+              method='POST',
+              headers={'Content-Type': 'application/json'},
+              data=payload,
+            )
+            if status >= 400:
+              raise RuntimeError(f'GraphQL HTTP {status}: {body[:500]!r}')
+            obj = json.loads(body)
+            if obj.get('errors'):
+              raise RuntimeError(f"GraphQL errors: {obj['errors']}")
+            return obj['data']
+
+          def get_discussion():
+            q = """
+            query($id:ID!) {
+              node(id:$id) {
+                ... on Discussion {
+                  id
+                  number
+                  title
+                  url
+                  comments(first: 100) {
+                    nodes {
+                      id
+                      body
+                      author { login }
+                      createdAt
+                    }
+                  }
+                }
+              }
+            }
+            """
+            data = gh_graphql(q, {'id': discussion_node_id})
+            node = data.get('node')
+            if not node:
+              raise RuntimeError('Discussion not found by node id')
+            return node
+
+          def update_discussion_comment(comment_node_id: str, body: str):
+            q = """
+            mutation($id:ID!, $body:String!) {
+              updateDiscussionComment(input:{commentId:$id, body:$body}) {
+                comment { id }
+              }
+            }
+            """
+            gh_graphql(q, {'id': comment_node_id, 'body': body})
+
+          def add_discussion_comment(discussion_id: str, body: str) -> str:
+            q = """
+            mutation($id:ID!, $body:String!) {
+              addDiscussionComment(input:{discussionId:$id, body:$body}) {
+                comment { id }
+              }
+            }
+            """
+            data = gh_graphql(q, {'id': discussion_id, 'body': body})
+            return data['addDiscussionComment']['comment']['id']
+
+          def delete_discussion(discussion_id: str):
+            q = """
+            mutation($id:ID!) {
+              deleteDiscussion(input:{id:$id}) {
+                clientMutationId
+              }
+            }
+            """
+            gh_graphql(q, {'id': discussion_id})
+
+          def delete_discussion_comment(comment_node_id: str):
+            q = """
+            mutation($id:ID!) {
+              deleteDiscussionComment(input:{id:$id}) {
+                clientMutationId
+              }
+            }
+            """
+            gh_graphql(q, {'id': comment_node_id})
+
+          def load_test_json() -> dict:
+            base = tasks_root / 'lessons' / lesson_folder / 'tests'
+            student_variant = base / f'test {test_number} {student_short}.json'
+            canonical = base / f'test {test_number}.json'
+
+            path = student_variant if student_variant.is_file() else canonical
+            if not path.is_file():
+              raise RuntimeError(f'Test JSON not found: {student_variant} or {canonical}')
+
+            return json.loads(path.read_text(encoding='utf-8'))
+
+          def build_mc_body(q: dict, *, question_index: int, total_questions: int) -> tuple[str, list[int]]:
+            question = (q.get('question') or '').strip()
+            options = q.get('options')
+            if not isinstance(options, list) or len(options) != 5:
+              raise RuntimeError('Multiple choice question must have exactly 5 options')
+
+            # Shuffle options 1-5, keep mapping
+            perm = list(range(5))
+            random.shuffle(perm)
+            shuffled = [options[i] for i in perm]
+
+            # Add fixed 6th option
+            shuffled.append('Я не знаю ответа')
+
+            body_lines = []
+            body_lines.append(f"Вопрос {question_index}/{total_questions}")
+            body_lines.append('')
+            body_lines.append(question)
+            body_lines.append('')
+
+            for i, opt in enumerate(shuffled, start=1):
+              body_lines.append(f"- [ ] {i}) {opt}")
+
+            body_lines.append('')
+            body_lines.append('- [ ] Завершить тест')
+
+            return '\n'.join(body_lines), perm
+
+          def build_text_body(q: dict, *, question_index: int, total_questions: int) -> str:
+            question = (q.get('question') or '').strip()
+            body_lines = [f"Вопрос {question_index}/{total_questions}", '', question, '', 'Ответьте обычным комментарием.', '', '- [ ] Завершить тест']
+            return '\n'.join(body_lines)
+
+          def build_finish_confirm_body() -> str:
+            return '\n'.join([
+              'Подтвердите завершение теста',
+              '',
+              '- [ ] Да, завершить тест',
+              '- [ ] Нет, продолжить тест',
+            ])
+
+          def parse_finish_confirm(body: str):
+            yes = False
+            no = False
+            for line in body.splitlines():
+              if line.strip().lower() == '- [x] да, завершить тест':
+                yes = True
+              if line.strip().lower() == '- [x] нет, продолжить тест':
+                no = True
+            if yes:
+              return 'yes'
+            if no:
+              return 'no'
+            return None
+
+          def parse_first_checked_index(body: str):
+            # Returns list of ints 1..6 for checked options.
+            # Also detects finish checkbox.
+            checked = []
+            for line in body.splitlines():
+              m = re.match(r'^- \[(x|X)\] (\d+)\) ', line.strip())
+              if m:
+                checked.append(int(m.group(2)))
+              if line.strip().lower() == '- [x] завершить тест':
+                return ('finish', None)
+            if checked:
+              return ('choice', sorted(set(checked)))
+            return (None, None)
+
+          def normalize_mc_body_for_compare(body: str) -> str:
+            # Allow only checkbox state changes.
+            return re.sub(r'^- \[[xX ]\]', '- [ ]', body, flags=re.MULTILINE).strip()
+
+          def load_initial_template() -> str:
+            path = tasks_root / 'misc' / 'inital_test_page.txt'
+            if not path.is_file():
+              raise RuntimeError(f'Initial template not found: {path}')
+            return path.read_text(encoding='utf-8').strip()
+
+          def initial_start_checked(body: str) -> bool:
+            # Start checkbox line in template: "- [ ] ← ..."
+            for line in body.splitlines():
+              if line.strip().startswith('- [x]') and 'нажмите' in line.lower() and 'запуска теста' in line.lower():
+                return True
+            return False
+
+          def update_tracker_progress(done: int, total_: int):
+            # Update a single shared tracker comment in python2026_tasks.
+            # Format line: "<student>: not active" or "<student>: 3/10".
+            q = """
+            query($id:ID!) {
+              node(id:$id) {
+                ... on DiscussionComment {
+                  id
+                  body
+                }
+              }
+            }
+            """
+            data = gh_graphql(q, {'id': tracker_comment_id})
+            node = data.get('node') or {}
+            body = (node.get('body') or '').strip()
+            lines = body.splitlines() if body else []
+            updated = []
+            found = False
+            for line in lines:
+              if line.strip().startswith(f'{student_short}:'):
+                updated.append(f'{student_short}: {done}/{total_}')
+                found = True
+              else:
+                updated.append(line)
+            if not found:
+              updated.append(f'{student_short}: {done}/{total_}')
+            update_discussion_comment(tracker_comment_id, '\n'.join(updated).strip())
+
+          def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str):
+            url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
+            url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
+
+            sha = None
+            status, body = gh_request(url, method='GET')
+            if status == 200:
+              sha = json.loads(body).get('sha')
+            elif status == 404:
+              sha = None
+            else:
+              raise RuntimeError(f'Unexpected status {status} checking {owner_}/{repo_}/{path}: {body[:200]!r}')
+
+            payload = {
+              'message': message,
+              'content': base64.b64encode(content.encode('utf-8')).decode('ascii'),
+            }
+            if sha:
+              payload['sha'] = sha
+
+            status2, body2 = gh_request(
+              url,
+              method='PUT',
+              headers={'Content-Type': 'application/json'},
+              data=json.dumps(payload).encode('utf-8'),
+            )
+            if status2 not in (200, 201):
+              raise RuntimeError(f'Failed write {owner_}/{repo_}/{path}: HTTP {status2}: {body2[:500]!r}')
+
+          def delete_contents_file(owner_: str, repo_: str, path: str, message: str):
+            url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
+            url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
+
+            status, body = gh_request(url, method='GET')
+            if status == 404:
+              return
+            if status != 200:
+              raise RuntimeError(f'Unexpected status {status} checking for delete {owner_}/{repo_}/{path}: {body[:200]!r}')
+            sha = json.loads(body).get('sha')
+            if not sha:
+              return
+
+            payload = {
+              'message': message,
+              'sha': sha,
+            }
+            status2, body2 = gh_request(
+              url,
+              method='DELETE',
+              headers={'Content-Type': 'application/json'},
+              data=json.dumps(payload).encode('utf-8'),
+            )
+            if status2 not in (200, 204):
+              raise RuntimeError(f'Failed delete {owner_}/{repo_}/{path}: HTTP {status2}: {body2[:500]!r}')
+
+          test_obj = load_test_json()
+          questions = test_obj.get('questions') or []
+          if not isinstance(questions, list) or not questions:
+            raise SystemExit('No questions in test JSON')
+
+          cfg = test_obj.get('config') or {}
+          shuffle_questions = bool(cfg.get('shuffle'))
+          if shuffle_questions:
+            random.shuffle(questions)
+
+          total = len(questions)
+
+          discussion = get_discussion()
+          comments = discussion['comments']['nodes']
+          if not comments:
+            raise SystemExit('Discussion has no comments')
+
+          # Marker verification: any comment authored by teacher_marker_login must exist.
+          if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in comments):
+            raise SystemExit('Marker verification failed: teacher comment not found')
+
+          # Assume the first comment is the active question container.
+          question_comment_id = comments[0]['id']
+
+          # Start gate: validate initial template and wait for student to check start box.
+          initial_template = load_initial_template()
+          initial_norm = normalize_mc_body_for_compare(initial_template)
+
+          started = False
+          start_wait_begin = time.time()
+          while time.time() - start_wait_begin < 15 * 60:
+            d0 = get_discussion()
+            nodes0 = d0['comments']['nodes']
+            if not nodes0:
+              raise SystemExit('Discussion has no comments during start wait')
+            c0 = nodes0[0]
+            if c0['id'] != question_comment_id:
+              # Something changed. Keep using the original comment id.
+              pass
+
+            # Marker still required.
+            if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in nodes0):
+              raise SystemExit('Marker verification failed during start wait')
+
+            body0 = (c0.get('body') or '').strip()
+            if normalize_mc_body_for_compare(body0) != initial_norm:
+              # Restore template if student edited content beyond checkboxes.
+              update_discussion_comment(question_comment_id, initial_template)
+              time.sleep(3)
+              continue
+
+            if initial_start_checked(body0):
+              started = True
+              break
+
+            time.sleep(3)
+
+          if not started:
+            raise SystemExit('Student did not start the test within 15 minutes')
+
+          # Now mark as active.
+          update_tracker_progress(0, total)
+
+          answers_log = []
+          score = 0.0
+          scored_questions = 0
+          wrong_for_ai = []
+
+          def is_detailed(q: dict) -> bool:
+            return 'options' not in q and 'answers' not in q
+
+          for idx, q in enumerate(questions, start=1):
+            # Present question.
+            option_perm = None
+            if is_detailed(q):
+              body = build_text_body(q, question_index=idx, total_questions=total)
+            else:
+              body, option_perm = build_mc_body(q, question_index=idx, total_questions=total)
+
+            update_discussion_comment(question_comment_id, body)
+            expected_norm = normalize_mc_body_for_compare(body) if not is_detailed(q) else None
+
+            # Wait for an answer.
+            # For MC: wait for checkbox change in the question comment.
+            # For detailed: wait for a new plain comment by the student.
+            start = time.time()
+            answered = False
+            selected = None
+            detailed_text = None
+
+            while time.time() - start < 45 * 60:
+              time.sleep(3)
+              d = get_discussion()
+              nodes = d['comments']['nodes']
+
+              # Re-verify marker each cycle.
+              if not any((c.get('author') or {}).get('login') == teacher_marker_login for c in nodes):
+                raise SystemExit('Marker verification failed mid-run')
+
+              # Locate current question comment.
+              q_comment = None
+              for c in nodes:
+                if c['id'] == question_comment_id:
+                  q_comment = c
+                  break
+              if not q_comment:
+                raise SystemExit('Question comment missing')
+
+              if is_detailed(q):
+                # Find newest non-teacher comment which is not the question comment itself.
+                for c in reversed(nodes):
+                  author = (c.get('author') or {}).get('login')
+                  if c['id'] == question_comment_id:
+                    continue
+                  if author in (None, teacher_marker_login):
+                    continue
+                  detailed_text = (c.get('body') or '').strip()
+                  if detailed_text:
+                    # cleanup extra comment
+                    delete_discussion_comment(c['id'])
+                    answered = True
+                    break
+              else:
+                kind, choice = parse_first_checked_index(q_comment.get('body') or '')
+
+                # Template enforcement for MC: restore if content changed beyond checkbox states.
+                current_body = (q_comment.get('body') or '')
+                if expected_norm is not None and normalize_mc_body_for_compare(current_body) != expected_norm:
+                  update_discussion_comment(question_comment_id, body)
+                  continue
+
+                if kind == 'finish':
+                  # Ask for confirmation.
+                  confirm_body = build_finish_confirm_body()
+                  update_discussion_comment(question_comment_id, confirm_body)
+                  confirm_start = time.time()
+                  while time.time() - confirm_start < 120:
+                    time.sleep(3)
+                    d2 = get_discussion()
+                    nodes2 = d2['comments']['nodes']
+                    q2 = None
+                    for c2 in nodes2:
+                      if c2['id'] == question_comment_id:
+                        q2 = c2
+                        break
+                    if not q2:
+                      raise SystemExit('Question comment missing during finish confirm')
+                    decision = parse_finish_confirm(q2.get('body') or '')
+                    if decision == 'yes':
+                      answers_log.append({'id': q.get('id'), 'finish': True})
+                      answered = True
+                      selected = 'finish'
+                      break
+                    if decision == 'no':
+                      # Restore original question.
+                      update_discussion_comment(question_comment_id, body)
+                      break
+                  if selected == 'finish':
+                    break
+                if kind == 'choice' and choice is not None:
+                  # Validate selections.
+                  selections = list(choice)
+                  if any((x < 1 or x > 6) for x in selections):
+                    update_discussion_comment(question_comment_id, body)
+                    continue
+                  if 6 in selections and len(selections) > 1:
+                    # Do not allow mixing "I do not know" with other answers.
+                    update_discussion_comment(question_comment_id, body)
+                    continue
+                  selected = selections
+                  answered = True
+
+              if answered:
+                break
+
+              # Delete unrelated extra comments (student spamming).
+              for c in list(nodes)[1:]:
+                author = (c.get('author') or {}).get('login')
+                if author and author != teacher_marker_login and c['id'] != question_comment_id:
+                  try:
+                    delete_discussion_comment(c['id'])
+                  except Exception:
+                    pass
+
+            if not answered:
+              raise SystemExit('Timeout waiting for answer')
+
+            if selected == 'finish':
+              break
+
+            if is_detailed(q):
+              answers_log.append({'id': q.get('id'), 'question': q.get('question'), 'answer_text': detailed_text, 'score': None})
+              wrong_for_ai.append({
+                'question': q.get('question'),
+                'answer_text': detailed_text,
+                'kind': 'detailed',
+              })
+              update_tracker_progress(min(idx, total), total)
+              continue
+
+            # MC scoring
+            correct = q.get('answers')
+            if not isinstance(correct, list) or len(correct) != 5:
+              raise SystemExit('Invalid answers array in test JSON')
+
+            # selected is list of choices in 1..6; 6 means I do not know
+            selections = list(selected)
+            points = 0.0
+            is_correct = False
+            if selections == [6]:
+              points = 0.2
+            else:
+              chosen_original = sorted({option_perm[x - 1] for x in selections if 1 <= x <= 5})
+              correct_original = [i for i, v in enumerate(correct) if int(v) == 1]
+              is_correct = (chosen_original == correct_original)
+              points = 1.0 if is_correct else 0.0
+
+            score += points
+            scored_questions += 1
+            answers_log.append({
+              'id': q.get('id'),
+              'question': q.get('question'),
+              'selected': selections,
+              'points': points,
+              'is_correct': is_correct,
+            })
+
+            if not is_correct and selections != [6]:
+              wrong_for_ai.append({
+                'question': q.get('question'),
+                'selected': selections,
+                'kind': 'multiple_choice',
+              })
+
+            update_tracker_progress(min(idx, total), total)
+
+          percent = int(round((score / max(1, scored_questions)) * 100))
+
+          # Build results file content
+          lines = []
+          lines.append(f'{percent}%')
+          lines.append('')
+          lines.append(f'Test {test_number} result for {student_short}')
+          lines.append('')
+          for entry in answers_log:
+            lines.append('---')
+            lines.append(str(entry.get('question') or ''))
+            if entry.get('finish'):
+              lines.append('Finished early')
+            elif 'answer_text' in entry:
+              lines.append('Answer:')
+              lines.append(entry.get('answer_text') or '')
+            else:
+              lines.append(f"Selected: {entry.get('selected')} | Points: {entry.get('points')} | Correct: {entry.get('is_correct')}")
+
+          result_content = '\n'.join(lines).strip() + '\n'
+
+          def maybe_run_ai_analysis(base_content: str) -> str:
+            if not openrouter_key:
+              return base_content
+
+            try:
+              tmpl_path = tasks_root / 'misc' / 'test_result_analysis_prompt.md'
+              tmpl = tmpl_path.read_text(encoding='utf-8').strip() if tmpl_path.is_file() else ''
+              if not tmpl:
+                return base_content
+
+              models_file_url = 'https://raw.githubusercontent.com/Pau1R/python2026/main/misc/openrouter%20models.txt'
+
+              def load_models(url: str):
+                try:
+                  text = urllib.request.urlopen(url, timeout=30).read().decode('utf-8', errors='ignore')
+                except Exception:
+                  return []
+                models = []
+                for line in text.splitlines():
+                  line = line.strip()
+                  if not line or line.startswith('#'):
+                    continue
+                  models.append(line)
+                return models
+
+              def call(model: str):
+                payload = {
+                  'model': model,
+                  'temperature': 0.1,
+                  'messages': [
+                    {'role': 'system', 'content': 'You analyze student test answers and explain mistakes.'},
+                    {
+                      'role': 'user',
+                      'content': tmpl + '\n\n' + 'Answers requiring analysis:\n' + json.dumps(wrong_for_ai, ensure_ascii=False) + '\n\n' + 'Full transcript:\n' + base_content,
+                    },
+                  ],
+                }
+                req = urllib.request.Request(
+                  'https://openrouter.ai/api/v1/chat/completions',
+                  data=json.dumps(payload).encode('utf-8'),
+                  headers={
+                    'Authorization': f'Bearer {openrouter_key}',
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://github.com/Pau1R/python2026',
+                    'X-Title': 'python2026-test-runner',
+                  },
+                  method='POST',
+                )
+                try:
+                  body = urllib.request.urlopen(req, timeout=120).read()
+                except Exception:
+                  return None
+                try:
+                  obj = json.loads(body)
+                except Exception:
+                  return None
+                choices = obj.get('choices') or []
+                if not choices:
+                  return None
+                msg = (choices[0].get('message') or {}).get('content') or ''
+                msg = msg.strip()
+                return msg or None
+
+              models = load_models(models_file_url)
+              if not models:
+                return base_content
+
+              msg = None
+              for model in models:
+                msg = call(model)
+                if msg:
+                  break
+
+              if not msg:
+                return base_content
+              return base_content + '\n\n' + msg + '\n'
+            except Exception:
+              return base_content
+
+          result_content = maybe_run_ai_analysis(result_content)
+
+          student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
+          teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
+
+          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})')
+          write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})')
+
+          # Cleanup comments, leave one final comment only.
+          try:
+            d3 = get_discussion()
+            for c in d3['comments']['nodes']:
+              try:
+                delete_discussion_comment(c['id'])
+              except Exception:
+                pass
+          except Exception:
+            pass
+
+          final_body = f"Тест завершен. Результат: {percent}%.\n\nРезультаты: {student_result_path}"
+          add_discussion_comment(discussion_node_id, final_body)
+
+          # 30-second lesson link comment.
+          lesson_link = f"https://github.com/{owner}/{repo}/tree/main/lessons/{urllib.parse.quote(lesson_folder)}"
+          lesson_comment_id = add_discussion_comment(discussion_node_id, f"Материалы урока: {lesson_link}")
+          time.sleep(30)
+          try:
+            delete_discussion_comment(lesson_comment_id)
+          except Exception:
+            pass
+
+          # Cleanup link file
+          link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
+          try:
+            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})')
+          except Exception:
+            pass
+
+          # Delete the discussion.
+          try:
+            delete_discussion(discussion_node_id)
+          except Exception:
+            pass
+
+          print(f'Done. Score={score}, percent={percent}')
