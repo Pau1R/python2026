@@ -30,6 +30,7 @@ jobs:
           # Get discussion author and body from event
           author = ''
           body = ''
+          discussion_node_id = ''
           
           if 'event' in github_context:
               event = github_context['event']
@@ -38,9 +39,11 @@ jobs:
               if 'comment' in event:
                   author = event['comment'].get('user', {}).get('login', '')
                   body = event['comment'].get('body', '')
+                  discussion_node_id = event.get('discussion', {}).get('node_id', '')
               elif 'discussion' in event:
                   author = event['discussion'].get('user', {}).get('login', '')
                   body = event['discussion'].get('body', '')
+                  discussion_node_id = event['discussion'].get('node_id', '')
               elif 'body' in event:
                   body = event.get('body', '')
               if 'sender' in event:
@@ -64,6 +67,7 @@ jobs:
             raise SystemExit('GITHUB_OUTPUT missing')
           with open(out, 'a', encoding='utf-8') as f:
             f.write(f"is_starter={'true' if ok else 'false'}\n")
+            f.write(f"discussion_node_id={discussion_node_id}\n")
 
       - name: Checkout student repo
         if: ${{ steps.starter.outputs.is_starter == 'true' }}
