@@ -504,8 +504,19 @@ jobs:
             gh_graphql_teacher(q2, {'id': tracker_comment_id, 'body': '\n'.join(updated).strip()})
 
           def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str, *, token: str):
-            url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
+            # Encode path more carefully
+            import urllib.parse
+            # Split path and encode each part
+            path_parts = path.split('/')
+            encoded_parts = [urllib.parse.quote(p, safe='') for p in path_parts]
+            url_path = '/'.join(encoded_parts)
             url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
+            
+            # Quick debug
+            print(f'Original path: {path}')
+            print(f'Encoded path: {url_path}')
+            print(f'Full URL: {url}')
+            print(f'Token type: {"teacher" if token == teacher_pat else "student"}')
 
             sha = None
             status, body = gh_request(url, token=token, method='GET')
