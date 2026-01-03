@@ -868,7 +868,7 @@ jobs:
           student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
           teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
 
-          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=student_token)
+          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
           write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
 
           # Cleanup comments, leave one final comment only.
