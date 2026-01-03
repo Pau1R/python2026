@@ -20,12 +20,41 @@ jobs:
       contents: read
 
     steps:
+      - name: Verify starter comment
+        id: starter
+        shell: python
+        env:
+          EVENT_AUTHOR: ${{ github.event.comment.user.login || '' }}
+          EVENT_BODY: ${{ github.event.comment.body || '' }}
+        run: |
+          import os
+
+          author = (os.environ.get('EVENT_AUTHOR') or '').strip()
+          body = os.environ.get('EVENT_BODY') or ''
+
+          required_author = 'pau1r'
+          required_line = '- [x] ← нажмите и подождите 10 секунд для запуска теста'
+
+          ok = True
+          if author.lower() != required_author:
+            ok = False
+          if required_line not in body:
+            ok = False
+
+          out = os.environ.get('GITHUB_OUTPUT')
+          if not out:
+            raise SystemExit('GITHUB_OUTPUT missing')
+          with open(out, 'a', encoding='utf-8') as f:
+            f.write(f"is_starter={'true' if ok else 'false'}\n")
+
       - name: Checkout student repo
+        if: ${{ steps.starter.outputs.is_starter == 'true' }}
         uses: actions/checkout@v4
         with:
           path: student
 
       - name: Checkout tasks repo
+        if: ${{ steps.starter.outputs.is_starter == 'true' }}
         uses: actions/checkout@v4
         with:
           repository: Pau1R/python2026_tasks
@@ -33,6 +62,7 @@ jobs:
           path: tasks
 
       - name: Resolve test metadata
+        if: ${{ steps.starter.outputs.is_starter == 'true' }}
         id: meta
         shell: python
         env:
@@ -112,6 +142,7 @@ jobs:
               f.write(f'{k}={out[k]}\n')
 
       - name: Run test loop
+        if: ${{ steps.starter.outputs.is_starter == 'true' }}
         shell: python
         env:
           TEST_NUMBER: ${{ steps.meta.outputs.test_number }}
@@ -818,3 +849,8 @@ jobs:
             pass
 
           print(f'Done. Score={score}, percent={percent}')
+
+      - name: Skip non-starter events
+        if: ${{ steps.starter.outputs.is_starter != 'true' }}
+        run: |
+          echo "Not a starter comment. Skipping."
