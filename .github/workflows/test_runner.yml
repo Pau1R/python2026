@@ -395,22 +395,22 @@ jobs:
             shuffled.append('Я не знаю ответа')
 
             body_lines = []
-            body_lines.append(f"Вопрос {question_index}/{total_questions}")
-            body_lines.append('')
-            body_lines.append(question)
+            body_lines.append(f"## {question}")
             body_lines.append('')
 
             for i, opt in enumerate(shuffled, start=1):
-              body_lines.append(f"- [ ] {i}) {opt}")
+              body_lines.append(f"- [ ] {opt}")
 
             body_lines.append('')
-            body_lines.append('- [ ] Завершить тест')
+            body_lines.append(f" {question_index}/{total_questions}")
+            body_lines.append('')
+            body_lines.append('- [ ] Завершить тест досрочно')
 
             return '\n'.join(body_lines), perm
 
           def build_text_body(q: dict, *, question_index: int, total_questions: int) -> str:
             question = (q.get('question') or '').strip()
-            body_lines = [f"Вопрос {question_index}/{total_questions}", '', question, '', 'Ответьте обычным комментарием.', '', '- [ ] Завершить тест']
+            body_lines = [f"## {question}", '', 'Ответьте обычным комментарием.', '', f" {question_index}/{total_questions}", '', '- [ ] Завершить тест досрочно']
             return '\n'.join(body_lines)
 
           def build_finish_confirm_body() -> str:
@@ -439,11 +439,17 @@ jobs:
             # Returns list of ints 1..6 for checked options.
             # Also detects finish checkbox.
             checked = []
+            option_count = 0
             for line in body.splitlines():
-              m = re.match(r'^- \[(x|X)\] (\d+)\) ', line.strip())
-              if m:
-                checked.append(int(m.group(2)))
-              if line.strip().lower() == '- [x] завершить тест':
+              line_stripped = line.strip()
+              # Check for checked options
+              if line_stripped.startswith('- [x]') and not line_stripped.startswith('- [x] Завершить'):
+                option_count += 1
+                checked.append(option_count)
+              elif line_stripped.startswith('- [ ]') and not line_stripped.startswith('- [ ] Завершить'):
+                option_count += 1
+              # Check for finish checkbox
+              if line_stripped.lower() == '- [x] завершить тест досрочно' or line_stripped.lower() == '- [x] завершить тест':
                 return ('finish', None)
             if checked:
               return ('choice', sorted(set(checked)))
