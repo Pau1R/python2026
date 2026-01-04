@@ -982,11 +982,12 @@ jobs:
             pass
 
           # Update discussion body with results instead of adding a comment
-          result_link = f"https://github.com/{owner}/{repo}/blob/main/{student_result_path}"
+          result_path_encoded = '/'.join(urllib.parse.quote(p, safe='') for p in student_result_path.split('/'))
+          result_link = f"https://github.com/{owner}/{repo}/blob/main/{result_path_encoded}"
           if ai_analysis_done:
-            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\nAI-анализ выполнен.\n\n[Полные результаты теста]({result_link})"
+            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\nAI-анализ выполнен.\n\n[Результаты теста]({result_link})"
           else:
-            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Полные результаты теста]({result_link})"
+            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Результаты теста]({result_link})"
           update_discussion_body(discussion_node_id, final_body)
 
           # Wait before deleting (longer if AI analysis was done)
