@@ -868,7 +868,15 @@ jobs:
           student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
           teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
 
-          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
+          # Try to write to student repo - may fail if workflow runs in tasks repo
+          try:
+            write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=student_token)
+            student_write_success = True
+          except Exception as e:
+            print(f'Warning: Could not write to student repo: {e}')
+            student_write_success = False
+          
+          # Always write to tasks repo
           write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
 
           # Cleanup comments, leave one final comment only.
@@ -882,7 +890,7 @@ jobs:
           except Exception:
             pass
 
-          final_body = f"Тест завершен. Результат: {percent}%.\n\nРезультаты: {student_result_path}"
+          final_body = f"Тест завершен. Результат: {percent}%.\n\nРезультаты: {student_result_path}" + (f"\n(Также сохранено в python2026_tasks/{teacher_result_path})" if not student_write_success else "")
           add_discussion_comment(discussion_node_id, final_body)
 
           # 30-second lesson link comment.
@@ -897,7 +905,7 @@ jobs:
           # Cleanup link file
           link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
           try:
-            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})', token=teacher_pat)
+            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})', token=student_token)
           except Exception:
             pass
 
