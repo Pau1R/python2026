@@ -839,15 +839,15 @@ jobs:
 
           result_content = '\n'.join(lines).strip() + '\n'
 
-          def maybe_run_ai_analysis(base_content: str) -> str:
+          def maybe_run_ai_analysis(base_content: str) -> tuple[str, bool]:
             if not openrouter_key:
-              return base_content
+              return base_content, False
 
             try:
               tmpl_path = tasks_root / 'misc' / 'test_result_analysis_prompt.md'
               tmpl = tmpl_path.read_text(encoding='utf-8').strip() if tmpl_path.is_file() else ''
               if not tmpl:
-                return base_content
+                return base_content, False
 
               models_file_url = 'https://raw.githubusercontent.com/Pau1R/python2026/main/misc/openrouter%20models.txt'
 
@@ -904,7 +904,7 @@ jobs:
 
               models = load_models(models_file_url)
               if not models:
-                return base_content
+                return base_content, False
 
               msg = None
               for model in models:
@@ -913,12 +913,12 @@ jobs:
                   break
 
               if not msg:
-                return base_content
-              return base_content + '\n\n' + msg + '\n'
+                return base_content, False
+              return base_content + '\n\n' + msg + '\n', True
             except Exception:
-              return base_content
+              return base_content, False
 
-          result_content = maybe_run_ai_analysis(result_content)
+          result_content, ai_analysis_done = maybe_run_ai_analysis(result_content)
 
           student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
           teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
@@ -941,8 +941,15 @@ jobs:
 
           # Update discussion body with results instead of adding a comment
           result_link = f"https://github.com/{owner}/{repo}/blob/main/{student_result_path}"
-          final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Полные результаты теста]({result_link})"
+          if ai_analysis_done:
+            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\nAI-анализ выполнен.\n\n[Полные результаты теста]({result_link})"
+          else:
+            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Полные результаты теста]({result_link})"
           update_discussion_body(discussion_node_id, final_body)
+
+          # If AI analysis was done, show message for 10 seconds before deleting
+          if ai_analysis_done:
+            time.sleep(10)
 
           # Cleanup link file
           link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
