@@ -522,30 +522,39 @@ jobs:
 
             # Try with the provided token first
             sha = None
-            status, body = gh_request(url, token=token, method='GET')
-            print(f"DEBUG: GET response status with {token_type}: {status}")
+            tokens_to_try = [
+                (token, token_type),
+                (teacher_pat, "TEACHER_PAT (fallback)"),
+                (tasks_repo_classic_token, "TASKS_REPO_CLASSIC_TOKEN (fallback)")
+            ]
             
-            # If student token fails, try with teacher PAT
-            if status == 404 and token == student_token:
-              print(f"DEBUG: Failed with student token, trying TEACHER_PAT...")
-              status, body = gh_request(url, token=teacher_pat, method='GET')
-              print(f"DEBUG: GET response status with TEACHER_PAT: {status}")
-              if status == 200:
-                token = teacher_pat
-                token_type = "TEACHER_PAT (fallback)"
+            # Remove duplicates from the list
+            unique_tokens = []
+            seen = set()
+            for t, name in tokens_to_try:
+                if t not in seen:
+                    unique_tokens.append((t, name))
+                    seen.add(t)
             
-            # If teacher PAT also fails, try with TASKS_REPO_CLASSIC_TOKEN
-            if status == 404 and token != tasks_repo_classic_token:
-              print(f"DEBUG: Failed with previous tokens, trying TASKS_REPO_CLASSIC_TOKEN...")
-              status, body = gh_request(url, token=tasks_repo_classic_token, method='GET')
-              print(f"DEBUG: GET response status with TASKS_REPO_CLASSIC_TOKEN: {status}")
-              if status == 200:
-                token = tasks_repo_classic_token
-                token_type = "TASKS_REPO_CLASSIC_TOKEN (fallback)"
+            status = 404
+            body = None
+            
+            for token_to_try, token_name in unique_tokens:
+                print(f"DEBUG: Trying with {token_name}...")
+                try:
+                    status, body = gh_request(url, token=token_to_try, method='GET')
+                    print(f"DEBUG: GET response status with {token_name}: {status}")
+                    if status == 200:
+                        token = token_to_try
+                        token_type = token_name
+                        break
+                except Exception as e:
+                    print(f"DEBUG: Request failed with {token_name}: {e}")
+                    continue
             
             if status == 200:
-              sha = json.loads(body).get('sha')
-              print(f"DEBUG: Successfully accessed with {token_type}")
+                sha = json.loads(body).get('sha')
+                print(f"DEBUG: Successfully accessed with {token_type}")
             elif status == 404:
               # Final diagnostic - try with teacher PAT to check if path exists
               print(f"DEBUG: All tokens failed - checking if repo/path exists...")
