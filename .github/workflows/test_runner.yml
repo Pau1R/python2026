@@ -399,7 +399,37 @@ jobs:
             body_lines.append('')
 
             for i, opt in enumerate(shuffled, start=1):
-              body_lines.append(f"- [ ] {opt}")
+              # Check if option starts with code block
+              if opt.strip().startswith('```'):
+                # Extract the first line after ``` as placeholder
+                lines = opt.split('\n')
+                if len(lines) > 1:
+                  placeholder = lines[1].strip() if lines[1].strip() else 'код'
+                else:
+                  placeholder = 'код'
+                body_lines.append(f"- [ ] {placeholder}")
+                body_lines.append('')
+                # Add each code block on new line with proper spacing
+                current_block = []
+                in_code_block = False
+                for line in opt.split('\n'):
+                  if line.strip().startswith('```'):
+                    if in_code_block:
+                      current_block.append(line)
+                      body_lines.extend(current_block)
+                      current_block = []
+                      in_code_block = False
+                    else:
+                      if current_block:
+                        body_lines.extend(current_block)
+                      current_block = [line]
+                      in_code_block = True
+                  else:
+                    current_block.append(' ' + line if line.strip() else line)
+                if current_block:
+                  body_lines.extend(current_block)
+              else:
+                body_lines.append(f"- [ ] {opt}")
 
             body_lines.append('')
             body_lines.append(f"Вопрос {question_index}/{total_questions}")
@@ -440,17 +470,32 @@ jobs:
             # Also detects finish checkbox.
             checked = []
             option_count = 0
-            for line in body.splitlines():
-              line_stripped = line.strip()
+            lines = body.splitlines()
+            i = 0
+            while i < len(lines):
+              line = lines[i].strip()
               # Check for checked options
-              if line_stripped.startswith('- [x]') and not line_stripped.startswith('- [x] Завершить'):
+              if line.startswith('- [x]') and not line.startswith('- [x] Завершить'):
                 option_count += 1
                 checked.append(option_count)
-              elif line_stripped.startswith('- [ ]') and not line_stripped.startswith('- [ ] Завершить'):
+                # Skip code block lines if they exist
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith('```'):
+                  i += 1
+                  # Skip until end of code block
+                  while i < len(lines) and not lines[i].strip().endswith('```'):
+                    i += 1
+              elif line.startswith('- [ ]') and not line.startswith('- [ ] Завершить'):
                 option_count += 1
+                # Skip code block lines if they exist
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith('```'):
+                  i += 1
+                  # Skip until end of code block
+                  while i < len(lines) and not lines[i].strip().endswith('```'):
+                    i += 1
               # Check for finish checkbox
-              if line_stripped.lower() == '- [x] завершить тест досрочно' or line_stripped.lower() == '- [x] завершить тест':
+              if line.lower() == '- [x] завершить тест досрочно' or line.lower() == '- [x] завершить тест':
                 return ('finish', None)
+              i += 1
             if checked:
               return ('choice', sorted(set(checked)))
             return (None, None)
