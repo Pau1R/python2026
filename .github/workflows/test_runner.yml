@@ -506,118 +506,12 @@ jobs:
           def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str, *, token: str):
             url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
             url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
-            
-            # Debug: Identify which token is being used
-            token_type = "UNKNOWN"
-            if token == student_token:
-              token_type = "STUDENT_TOKEN (github.token)"
-            elif token == teacher_pat:
-              token_type = "TEACHER_PAT"
-            elif token == tasks_repo_classic_token:
-              token_type = "TASKS_REPO_CLASSIC_TOKEN"
-            
-            print(f"DEBUG: Writing to {owner_}/{repo_}/{path}")
-            print(f"DEBUG: Using token type: {token_type}")
-            print(f"DEBUG: URL: {url}")
 
-            # Try with the provided token first
             sha = None
-            tokens_to_try = [
-                (token, token_type),
-                (teacher_pat, "TEACHER_PAT (fallback)"),
-                (tasks_repo_classic_token, "TASKS_REPO_CLASSIC_TOKEN (fallback)")
-            ]
-            
-            # Remove duplicates from the list
-            unique_tokens = []
-            seen = set()
-            for t, name in tokens_to_try:
-                if t not in seen:
-                    unique_tokens.append((t, name))
-                    seen.add(t)
-            
-            status = 404
-            body = None
-            
-            for token_to_try, token_name in unique_tokens:
-                print(f"DEBUG: Trying with {token_name}...")
-                try:
-                    status, body = gh_request(url, token=token_to_try, method='GET')
-                    print(f"DEBUG: GET response status with {token_name}: {status}")
-                    if status == 200:
-                        token = token_to_try
-                        token_type = token_name
-                        break
-                except Exception as e:
-                    print(f"DEBUG: Request failed with {token_name}: {e}")
-                    continue
-            
+            status, body = gh_request(url, token=token, method='GET')
             if status == 200:
-                sha = json.loads(body).get('sha')
-                print(f"DEBUG: Successfully accessed with {token_type}")
+              sha = json.loads(body).get('sha')
             elif status == 404:
-              # Final diagnostic - try with teacher PAT to check if path exists
-              print(f"DEBUG: All tokens failed - checking if repo/path exists...")
-              repo_check_url = f'https://api.github.com/repos/{owner_}/{repo_}'
-              repo_status, repo_body = gh_request(repo_check_url, token=teacher_pat, method='GET')
-              print(f"DEBUG: Repo check with TEACHER_PAT: {repo_status}")
-              
-              if repo_status == 200:
-                print(f"DEBUG: Repo exists - checking if path exists...")
-                try:
-                    path_status, path_body = gh_request(url, token=teacher_pat, method='GET')
-                    print(f"DEBUG: Path check with TEACHER_PAT: {path_status}")
-                except Exception as e:
-                    print(f"DEBUG: Path check failed: {e}")
-                    path_status = 404
-                
-                if path_status == 200:
-                  print(f"DEBUG: Path exists but none of the tokens can access it!")
-                elif path_status == 404:
-                  print(f"DEBUG: Path does not exist - checking directory structure...")
-                  # Check if lessons directory exists
-                  try:
-                      lessons_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons'
-                      lessons_status, _ = gh_request(lessons_url, token=teacher_pat, method='GET')
-                      print(f"DEBUG: lessons/ directory status: {lessons_status}")
-                  except Exception as e:
-                      print(f"DEBUG: Failed to check lessons directory: {e}")
-                      lessons_status = 404
-                  
-                  # Check if specific lesson directory exists
-                  try:
-                      lesson_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons/lesson%2041%20%2829.12%29.%20%D0%A1%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC%D0%BE%D0%B2.%20Big%20O'
-                      lesson_status, _ = gh_request(lesson_url, token=teacher_pat, method='GET')
-                      print(f"DEBUG: Lesson directory status: {lesson_status}")
-                  except Exception as e:
-                      print(f"DEBUG: Failed to check lesson directory: {e}")
-                      lesson_status = 404
-                  
-                  # Check if tests directory exists
-                  try:
-                      tests_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons/lesson%2041%20%2829.12%29.%20%D0%A1%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC%D0%BE%D0%B2.%20Big%20O/tests'
-                      tests_status, _ = gh_request(tests_url, token=teacher_pat, method='GET')
-                      print(f"DEBUG: tests/ directory status: {tests_status}")
-                  except Exception as e:
-                      print(f"DEBUG: Failed to check tests directory: {e}")
-                      tests_status = 404
-                  
-                  # List what's actually in the lessons directory
-                  if lessons_status == 200:
-                    try:
-                        list_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons'
-                        _, list_body = gh_request(list_url, token=teacher_pat, method='GET')
-                        items = json.loads(list_body)
-                        print(f"DEBUG: Contents of lessons/ directory:")
-                        for item in items[:5]:  # Show first 5 items
-                          print(f"  - {item.get('name', 'unknown')} ({item.get('type', 'unknown')})")
-                    except Exception as e:
-                        print(f"DEBUG: Failed to list lessons directory: {e}")
-                  
-                  print(f"DEBUG: Parent directories are missing - need to create them")
-              elif repo_status == 404:
-                print(f"DEBUG: Repository does not exist or TEACHER_PAT cannot access it")
-              
               sha = None
             else:
               raise RuntimeError(f'Unexpected status {status} checking {owner_}/{repo_}/{path}: {body[:200]!r}')
@@ -974,7 +868,7 @@ jobs:
           student_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
           teacher_result_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short} result.md'
 
-          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=student_token)
+          write_contents_file(owner, repo, student_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
           write_contents_file('Pau1R', 'python2026_tasks', teacher_result_path, result_content, f'Add test result {test_number} ({student_short})', token=teacher_pat)
 
           # Cleanup comments, leave one final comment only.
@@ -1003,7 +897,7 @@ jobs:
           # Cleanup link file
           link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
           try:
-            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})', token=student_token)
+            delete_contents_file(owner, repo, link_path, f'Remove test link for {test_number} ({student_short})', token=teacher_pat)
           except Exception:
             pass
 
