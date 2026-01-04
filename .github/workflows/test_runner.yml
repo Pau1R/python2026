@@ -527,19 +527,19 @@ jobs:
             update_discussion_body(discussion_node_id, progress_text)
 
           def update_tracker_progress(done: int, total_: int):
-            # Update a single shared tracker comment in python2026_tasks.
+            # Update the tracker discussion body in python2026_tasks.
             # Format line: "<student>: not active" or "<student>: 3/10".
             q = """
             query($id:ID!) {
               node(id:$id) {
-                ... on DiscussionComment {
+                ... on Discussion {
                   id
                   body
                 }
               }
             }
             """
-            data = gh_graphql_teacher(q, {'id': tracker_comment_id})
+            data = gh_graphql_teacher(q, {'id': tracker_discussion_id})
             node = data.get('node') or {}
             body = (node.get('body') or '').strip()
             lines = body.splitlines() if body else []
@@ -555,12 +555,12 @@ jobs:
               updated.append(f'{student_short}: {done}/{total_}')
             q2 = """
             mutation($id:ID!, $body:String!) {
-              updateDiscussionComment(input:{commentId:$id, body:$body}) {
-                comment { id }
+              updateDiscussion(input:{discussionId:$id, body:$body}) {
+                discussion { id }
               }
             }
             """
-            gh_graphql_teacher(q2, {'id': tracker_comment_id, 'body': '\n'.join(updated).strip()})
+            gh_graphql_teacher(q2, {'id': tracker_discussion_id, 'body': '\n'.join(updated).strip()})
 
           def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str, *, token: str):
             url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
