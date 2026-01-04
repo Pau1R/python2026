@@ -628,13 +628,7 @@ jobs:
               body, option_perm = build_mc_body(q, question_index=idx, total_questions=total)
 
             update_discussion_body(discussion_node_id, body)
-            print(f"DEBUG: Displayed question {idx}, body={body[:200]!r}")
             expected_norm = normalize_mc_body_for_compare(body) if not is_detailed(q) else None
-            if expected_norm is not None:
-              print(f"DEBUG: expected_norm={expected_norm[:100]!r}")
-            
-            # Small delay to allow the UI to update before checking for changes
-            time.sleep(2)
 
             # Wait for an answer.
             # For MC: wait for checkbox change in the question comment.
@@ -643,7 +637,6 @@ jobs:
             answered = False
             selected = None
             detailed_text = None
-            first_check = True  # Skip template enforcement on first check
 
             while time.time() - start < 45 * 60:
               time.sleep(1)
@@ -676,16 +669,10 @@ jobs:
 
                 # Template enforcement for MC: restore if content changed beyond checkbox states.
                 current_body = question_body
-                if expected_norm is not None and not first_check:
-                  current_norm = normalize_mc_body_for_compare(current_body)
-                  print(f"DEBUG: expected_norm={expected_norm[:100]!r}")
-                  print(f"DEBUG: current_norm={current_norm[:100]!r}")
-                  if current_norm != expected_norm:
-                    print(f"DEBUG: Template mismatch, restoring body")
+                if expected_norm is not None:
+                  if normalize_mc_body_for_compare(current_body) != expected_norm:
                     update_discussion_body(discussion_node_id, body)
                     continue
-                
-                first_check = False
 
                 if kind == 'finish':
                   # Ask for confirmation.
