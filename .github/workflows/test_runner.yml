@@ -521,6 +521,11 @@ jobs:
                 return True
             return False
 
+          # Update discussion body with progress
+          def update_progress_in_body(current: int, total_: int):
+            progress_text = f"Прогресс: {current}/{total_}"
+            update_discussion_body(discussion_node_id, progress_text)
+
           def update_tracker_progress(done: int, total_: int):
             # Update a single shared tracker comment in python2026_tasks.
             # Format line: "<student>: not active" or "<student>: 3/10".
@@ -667,6 +672,7 @@ jobs:
 
           # Now mark as active.
           update_tracker_progress(0, total)
+          update_progress_in_body(0, total)
 
           test_start_ts = time.time()
           test_deadline_ts = (test_start_ts + time_limit_seconds) if time_limit_seconds is not None else None
@@ -819,6 +825,7 @@ jobs:
                 'kind': 'detailed',
               })
               update_tracker_progress(min(idx, total), total)
+              update_progress_in_body(min(idx, total), total)
               continue
 
             # MC scoring
@@ -856,6 +863,7 @@ jobs:
               })
 
             update_tracker_progress(min(idx, total), total)
+            update_progress_in_body(min(idx, total), total)
 
           percent = int(round((score / max(1, scored_questions)) * 100))
 
@@ -985,9 +993,9 @@ jobs:
           result_path_encoded = '/'.join(urllib.parse.quote(p, safe='') for p in student_result_path.split('/'))
           result_link = f"https://github.com/{owner}/{repo}/blob/main/{result_path_encoded}"
           if ai_analysis_done:
-            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\nAI-анализ выполнен.\n\n[Результаты теста]({result_link})"
+            final_body = f"# Тест завершен\n\n[{student_short}: {percent}%]({result_link})\n\nAI-анализ выполнен."
           else:
-            final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Результаты теста]({result_link})"
+            final_body = f"# Тест завершен\n\n[{student_short}: {percent}%]({result_link})"
           update_discussion_body(discussion_node_id, final_body)
 
           # Wait before deleting (longer if AI analysis was done)
