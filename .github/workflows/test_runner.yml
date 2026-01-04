@@ -621,6 +621,18 @@ jobs:
 
           cfg = test_obj.get('config') or {}
           shuffle_questions = bool(cfg.get('shuffle'))
+          ai_analysis_required = cfg.get('ai_analysis_required', None)
+
+          raw_time_limit = cfg.get('time_limit', None)
+          time_limit_seconds = None
+          if raw_time_limit is not None:
+            try:
+              time_limit_seconds = float(raw_time_limit)
+              if time_limit_seconds <= 0:
+                time_limit_seconds = None
+            except Exception:
+              time_limit_seconds = None
+
           if shuffle_questions:
             random.shuffle(questions)
 
@@ -656,24 +668,43 @@ jobs:
           # Now mark as active.
           update_tracker_progress(0, total)
 
+          test_start_ts = time.time()
+          test_deadline_ts = (test_start_ts + time_limit_seconds) if time_limit_seconds is not None else None
+
           answers_log = []
           score = 0.0
           scored_questions = 0
           wrong_for_ai = []
 
-          def is_detailed(q: dict) -> bool:
-            return 'options' not in q and 'answers' not in q
+          def question_answer_mode(q: dict) -> str:
+            # 'buttons' -> checkbox selection in discussion body
+            # 'text' -> student writes a normal comment
+            t = (q.get('question_answer_type') or '').strip().lower()
+            if t in {'buttons', 'text'}:
+              return t
+            # Backwards compatible fallback: old schema without question_answer_type
+            if 'options' not in q and 'answers' not in q:
+              return 'text'
+            return 'buttons'
+
+          def is_time_over() -> bool:
+            return test_deadline_ts is not None and time.time() >= test_deadline_ts
 
           for idx, q in enumerate(questions, start=1):
+            if is_time_over():
+              answers_log.append({'id': q.get('id'), 'finish': True, 'reason': 'time_limit'})
+              break
+
             # Present question.
             option_perm = None
-            if is_detailed(q):
+            mode = question_answer_mode(q)
+            if mode == 'text':
               body = build_text_body(q, question_index=idx, total_questions=total)
             else:
               body, option_perm = build_mc_body(q, question_index=idx, total_questions=total)
 
             update_discussion_body(discussion_node_id, body)
-            expected_norm = normalize_mc_body_for_compare(body) if not is_detailed(q) else None
+            expected_norm = normalize_mc_body_for_compare(body) if mode == 'buttons' else None
 
             # Wait for an answer.
             # For MC: wait for checkbox change in the question comment.
@@ -682,15 +713,19 @@ jobs:
             answered = False
             selected = None
             detailed_text = None
+            timed_out_by_limit = False
 
             while time.time() - start < 45 * 60:
+              if is_time_over():
+                timed_out_by_limit = True
+                break
               time.sleep(1)
               d = get_discussion()
               nodes = d['comments']['nodes']
 
               question_body = (d.get('body') or '')
 
-              if is_detailed(q):
+              if mode == 'text':
                 # Find newest non-teacher comment.
                 for c in reversed(nodes):
                   author = (c.get('author') or {}).get('login')
@@ -757,7 +792,7 @@ jobs:
                 break
 
               # Delete unrelated extra comments (student spamming).
-              if not is_detailed(q):
+              if mode == 'buttons':
                 for c in list(nodes)[1:]:
                   author = (c.get('author') or {}).get('login')
                   if author and (not teacher_marker_login or author != teacher_marker_login):
@@ -766,13 +801,17 @@ jobs:
                     except Exception:
                       pass
 
+            if timed_out_by_limit:
+              answers_log.append({'id': q.get('id'), 'finish': True, 'reason': 'time_limit'})
+              break
+
             if not answered:
               raise SystemExit('Timeout waiting for answer')
 
             if selected == 'finish':
               break
 
-            if is_detailed(q):
+            if mode == 'text':
               answers_log.append({'id': q.get('id'), 'question': q.get('question'), 'answer_text': detailed_text, 'score': None})
               wrong_for_ai.append({
                 'question': q.get('question'),
@@ -840,6 +879,9 @@ jobs:
           result_content = '\n'.join(lines).strip() + '\n'
 
           def maybe_run_ai_analysis(base_content: str) -> tuple[str, bool]:
+            if ai_analysis_required is False:
+              return base_content, False
+
             if not openrouter_key:
               return base_content, False
 
@@ -947,9 +989,11 @@ jobs:
             final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Полные результаты теста]({result_link})"
           update_discussion_body(discussion_node_id, final_body)
 
-          # If AI analysis was done, show message for 10 seconds before deleting
+          # Wait before deleting (longer if AI analysis was done)
           if ai_analysis_done:
-            time.sleep(10)
+            time.sleep(30)  # 30 seconds to view results with AI analysis
+          else:
+            time.sleep(10)  # 10 seconds to view results without AI analysis
 
           # Cleanup link file
           link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
