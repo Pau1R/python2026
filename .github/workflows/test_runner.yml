@@ -526,9 +526,9 @@ jobs:
             progress_text = f"Прогресс: {current}/{total_}"
             update_discussion_body(discussion_node_id, progress_text)
 
-          def update_tracker_progress(done: int, total_: int):
+          def update_tracker_progress(done: int, total_: int, final_percent: int = None, result_link: str = None):
             # Update the tracker discussion body in python2026_tasks.
-            # Format line: "<student>: not active" or "<student>: 3/10".
+            # Format line: "<student>: not active" or "<student>: 3/10" or "<student>: 10%" (final result)
             q = """
             query($id:ID!) {
               node(id:$id) {
@@ -547,12 +547,24 @@ jobs:
             found = False
             for line in lines:
               if line.strip().startswith(f'{student_short}:'):
-                updated.append(f'{student_short}: {done}/{total_}')
+                if final_percent is not None:
+                  if result_link:
+                    updated.append(f'{student_short}: [{final_percent}%]({result_link})')
+                  else:
+                    updated.append(f'{student_short}: {final_percent}%')
+                else:
+                  updated.append(f'{student_short}: {done}/{total_}')
                 found = True
               else:
                 updated.append(line)
             if not found:
-              updated.append(f'{student_short}: {done}/{total_}')
+              if final_percent is not None:
+                if result_link:
+                  updated.append(f'{student_short}: [{final_percent}%]({result_link})')
+                else:
+                  updated.append(f'{student_short}: {final_percent}%')
+              else:
+                updated.append(f'{student_short}: {done}/{total_}')
             q2 = """
             mutation($id:ID!, $body:String!) {
               updateDiscussion(input:{discussionId:$id, body:$body}) {
@@ -993,9 +1005,9 @@ jobs:
           result_path_encoded = '/'.join(urllib.parse.quote(p, safe='') for p in student_result_path.split('/'))
           result_link = f"https://github.com/{owner}/{repo}/blob/main/{result_path_encoded}"
           if ai_analysis_done:
-            final_body = f"# Тест завершен\n\n[{student_short}: {percent}%]({result_link})\n\nAI-анализ выполнен."
+            final_body = f"# Тест завершен\n\n[Результат теста]({result_link})\n\nAI-анализ выполнен."
           else:
-            final_body = f"# Тест завершен\n\n[{student_short}: {percent}%]({result_link})"
+            final_body = f"# Тест завершен\n\n[Результат теста]({result_link})"
           update_discussion_body(discussion_node_id, final_body)
 
           # Wait before deleting (longer if AI analysis was done)
@@ -1018,6 +1030,9 @@ jobs:
             pass
 
           print(f'Done. Score={score}, percent={percent}')
+          
+          # Update tracker with final result
+          update_tracker_progress(0, 0, percent, result_link)
 
       - name: Skip non-starter
         if: ${{ steps.starter.outputs.is_starter != 'true' || steps.concurrent_check.outputs.skip == 'true' }}
