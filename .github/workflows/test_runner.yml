@@ -564,35 +564,55 @@ jobs:
               
               if repo_status == 200:
                 print(f"DEBUG: Repo exists - checking if path exists...")
-                path_status, path_body = gh_request(url, token=teacher_pat, method='GET')
-                print(f"DEBUG: Path check with TEACHER_PAT: {path_status}")
+                try:
+                    path_status, path_body = gh_request(url, token=teacher_pat, method='GET')
+                    print(f"DEBUG: Path check with TEACHER_PAT: {path_status}")
+                except Exception as e:
+                    print(f"DEBUG: Path check failed: {e}")
+                    path_status = 404
+                
                 if path_status == 200:
                   print(f"DEBUG: Path exists but none of the tokens can access it!")
                 elif path_status == 404:
                   print(f"DEBUG: Path does not exist - checking directory structure...")
                   # Check if lessons directory exists
-                  lessons_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons'
-                  lessons_status, _ = gh_request(lessons_url, token=teacher_pat, method='GET')
-                  print(f"DEBUG: lessons/ directory status: {lessons_status}")
+                  try:
+                      lessons_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons'
+                      lessons_status, _ = gh_request(lessons_url, token=teacher_pat, method='GET')
+                      print(f"DEBUG: lessons/ directory status: {lessons_status}")
+                  except Exception as e:
+                      print(f"DEBUG: Failed to check lessons directory: {e}")
+                      lessons_status = 404
                   
                   # Check if specific lesson directory exists
-                  lesson_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons/lesson%2041%20%2829.12%29.%20%D0%A1%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC%D0%BE%D0%B2.%20Big%20O'
-                  lesson_status, _ = gh_request(lesson_url, token=teacher_pat, method='GET')
-                  print(f"DEBUG: Lesson directory status: {lesson_status}")
+                  try:
+                      lesson_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons/lesson%2041%20%2829.12%29.%20%D0%A1%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC%D0%BE%D0%B2.%20Big%20O'
+                      lesson_status, _ = gh_request(lesson_url, token=teacher_pat, method='GET')
+                      print(f"DEBUG: Lesson directory status: {lesson_status}")
+                  except Exception as e:
+                      print(f"DEBUG: Failed to check lesson directory: {e}")
+                      lesson_status = 404
                   
                   # Check if tests directory exists
-                  tests_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons/lesson%2041%20%2829.12%29.%20%D0%A1%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC%D0%BE%D0%B2.%20Big%20O/tests'
-                  tests_status, _ = gh_request(tests_url, token=teacher_pat, method='GET')
-                  print(f"DEBUG: tests/ directory status: {tests_status}")
+                  try:
+                      tests_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons/lesson%2041%20%2829.12%29.%20%D0%A1%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC%D0%BE%D0%B2.%20Big%20O/tests'
+                      tests_status, _ = gh_request(tests_url, token=teacher_pat, method='GET')
+                      print(f"DEBUG: tests/ directory status: {tests_status}")
+                  except Exception as e:
+                      print(f"DEBUG: Failed to check tests directory: {e}")
+                      tests_status = 404
                   
                   # List what's actually in the lessons directory
                   if lessons_status == 200:
-                    list_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons'
-                    _, list_body = gh_request(list_url, token=teacher_pat, method='GET')
-                    items = json.loads(list_body)
-                    print(f"DEBUG: Contents of lessons/ directory:")
-                    for item in items[:5]:  # Show first 5 items
-                      print(f"  - {item.get('name', 'unknown')} ({item.get('type', 'unknown')})")
+                    try:
+                        list_url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/lessons'
+                        _, list_body = gh_request(list_url, token=teacher_pat, method='GET')
+                        items = json.loads(list_body)
+                        print(f"DEBUG: Contents of lessons/ directory:")
+                        for item in items[:5]:  # Show first 5 items
+                          print(f"  - {item.get('name', 'unknown')} ({item.get('type', 'unknown')})")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to list lessons directory: {e}")
                   
                   print(f"DEBUG: Parent directories are missing - need to create them")
               elif repo_status == 404:
