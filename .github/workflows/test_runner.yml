@@ -402,7 +402,7 @@ jobs:
               body_lines.append(f"- [ ] {opt}")
 
             body_lines.append('')
-            body_lines.append(f" {question_index}/{total_questions}")
+            body_lines.append(f"Вопрос {question_index}/{total_questions}")
             body_lines.append('')
             body_lines.append('- [ ] Завершить тест досрочно')
 
@@ -410,7 +410,7 @@ jobs:
 
           def build_text_body(q: dict, *, question_index: int, total_questions: int) -> str:
             question = (q.get('question') or '').strip()
-            body_lines = [f"## {question}", '', 'Ответьте обычным комментарием.', '', f" {question_index}/{total_questions}", '', '- [ ] Завершить тест досрочно']
+            body_lines = [f"## {question}", '', 'Ответьте обычным комментарием.', '', f"Вопрос {question_index}/{total_questions}", '', '- [ ] Завершить тест досрочно']
             return '\n'.join(body_lines)
 
           def build_finish_confirm_body() -> str:
