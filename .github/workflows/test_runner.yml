@@ -939,17 +939,10 @@ jobs:
           except Exception:
             pass
 
-          final_body = f"Тест завершен. Результат: {percent}%.\n\nРезультаты: {student_result_path}"
-          add_discussion_comment(discussion_node_id, final_body)
-
-          # 30-second lesson link comment.
-          lesson_link = f"https://github.com/{owner}/{repo}/tree/main/lessons/{urllib.parse.quote(lesson_folder)}"
-          lesson_comment_id = add_discussion_comment(discussion_node_id, f"Материалы урока: {lesson_link}")
-          time.sleep(30)
-          try:
-            delete_discussion_comment(lesson_comment_id)
-          except Exception:
-            pass
+          # Update discussion body with results instead of adding a comment
+          result_link = f"https://github.com/{owner}/{repo}/blob/main/{student_result_path}"
+          final_body = f"# Тест завершен\n\n**Результат: {percent}%**\n\n[Полные результаты теста]({result_link})"
+          update_discussion_body(discussion_node_id, final_body)
 
           # Cleanup link file
           link_path = f'lessons/{lesson_folder}/tests/test {test_number} {student_short}.md'
