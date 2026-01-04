@@ -506,12 +506,64 @@ jobs:
           def write_contents_file(owner_: str, repo_: str, path: str, content: str, message: str, *, token: str):
             url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
             url = f'https://api.github.com/repos/{owner_}/{repo_}/contents/{url_path}'
+            
+            # Debug: Identify which token is being used
+            token_type = "UNKNOWN"
+            if token == student_token:
+              token_type = "STUDENT_TOKEN (github.token)"
+            elif token == teacher_pat:
+              token_type = "TEACHER_PAT"
+            elif token == tasks_repo_classic_token:
+              token_type = "TASKS_REPO_CLASSIC_TOKEN"
+            
+            print(f"DEBUG: Writing to {owner_}/{repo_}/{path}")
+            print(f"DEBUG: Using token type: {token_type}")
+            print(f"DEBUG: URL: {url}")
 
+            # Try with the provided token first
             sha = None
             status, body = gh_request(url, token=token, method='GET')
+            print(f"DEBUG: GET response status with {token_type}: {status}")
+            
+            # If student token fails, try with teacher PAT
+            if status == 404 and token == student_token:
+              print(f"DEBUG: Failed with student token, trying TEACHER_PAT...")
+              status, body = gh_request(url, token=teacher_pat, method='GET')
+              print(f"DEBUG: GET response status with TEACHER_PAT: {status}")
+              if status == 200:
+                token = teacher_pat
+                token_type = "TEACHER_PAT (fallback)"
+            
+            # If teacher PAT also fails, try with TASKS_REPO_CLASSIC_TOKEN
+            if status == 404 and token != tasks_repo_classic_token:
+              print(f"DEBUG: Failed with previous tokens, trying TASKS_REPO_CLASSIC_TOKEN...")
+              status, body = gh_request(url, token=tasks_repo_classic_token, method='GET')
+              print(f"DEBUG: GET response status with TASKS_REPO_CLASSIC_TOKEN: {status}")
+              if status == 200:
+                token = tasks_repo_classic_token
+                token_type = "TASKS_REPO_CLASSIC_TOKEN (fallback)"
+            
             if status == 200:
               sha = json.loads(body).get('sha')
+              print(f"DEBUG: Successfully accessed with {token_type}")
             elif status == 404:
+              # Final diagnostic - try with teacher PAT to check if path exists
+              print(f"DEBUG: All tokens failed - checking if repo/path exists...")
+              repo_check_url = f'https://api.github.com/repos/{owner_}/{repo_}'
+              repo_status, repo_body = gh_request(repo_check_url, token=teacher_pat, method='GET')
+              print(f"DEBUG: Repo check with TEACHER_PAT: {repo_status}")
+              
+              if repo_status == 200:
+                print(f"DEBUG: Repo exists - checking if path exists...")
+                path_status, path_body = gh_request(url, token=teacher_pat, method='GET')
+                print(f"DEBUG: Path check with TEACHER_PAT: {path_status}")
+                if path_status == 200:
+                  print(f"DEBUG: Path exists but none of the tokens can access it!")
+                elif path_status == 404:
+                  print(f"DEBUG: Path does not exist - parent directories might be missing")
+              elif repo_status == 404:
+                print(f"DEBUG: Repository does not exist or TEACHER_PAT cannot access it")
+              
               sha = None
             else:
               raise RuntimeError(f'Unexpected status {status} checking {owner_}/{repo_}/{path}: {body[:200]!r}')
