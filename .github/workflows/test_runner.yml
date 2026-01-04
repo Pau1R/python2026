@@ -259,8 +259,11 @@ jobs:
               **headers,
             }
             req = urllib.request.Request(url, data=data, method=method, headers=h)
-            with urllib.request.urlopen(req, timeout=60) as resp:
-              return resp.status, resp.read()
+            try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.status, resp.read()
+            except urllib.error.HTTPError as e:
+              return e.code, e.read() if e.fp else b''
 
           def gh_graphql(query: str, variables: dict, *, token: str):
             payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
