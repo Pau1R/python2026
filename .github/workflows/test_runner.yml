@@ -449,11 +449,6 @@ jobs:
 
             set_tracker_body("\n".join(out))
 
-
-          def update_progress_in_body(done: int, total: int):
-            update_discussion_body(discussion_id, f"Прогресс: {done}/{total}")
-
-
           def ensure_start_checkbox_line(text: str):
             req = "- [ ] ← нажмите и подождите 10 секунд для запуска теста"
             if req not in text:
@@ -908,7 +903,6 @@ jobs:
 
           total = len(questions)
           update_tracker_progress(0, total)
-          update_progress_in_body(0, total)
 
           answers_log = []
           wrong_for_ai = []
@@ -951,14 +945,12 @@ jobs:
                 answers_log.append({"question": q_text, "mode": "text", "answer": "(timeout)"})
                 wrong_for_ai.append({"kind": "detailed", "question": q_text, "answer": "(timeout)"})
                 update_tracker_progress(i + 1, total)
-                update_progress_in_body(i + 1, total)
                 continue
 
               answers_log.append({"question": q_text, "mode": "text", "answer": ans, "score": None})
               wrong_for_ai.append({"kind": "detailed", "question": q_text, "answer": ans})
 
               update_tracker_progress(i + 1, total)
-              update_progress_in_body(i + 1, total)
               continue
 
             options = q.get("options")
@@ -983,7 +975,6 @@ jobs:
               wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": [], "correct": []})
               scored_questions += 1
               update_tracker_progress(i + 1, total)
-              update_progress_in_body(i + 1, total)
               continue
 
             if kind == "finish":
@@ -1024,7 +1015,6 @@ jobs:
               wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": selected, "correct": correct_original})
 
             update_tracker_progress(i + 1, total)
-            update_progress_in_body(i + 1, total)
 
           percent = round((score / max(1, scored_questions)) * 100)
 
