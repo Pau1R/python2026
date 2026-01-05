@@ -781,7 +781,10 @@ jobs:
               title_line = title_line.lstrip('#').strip()
               title_line = title_line.replace('**', '').replace('__', '').replace('*', '').replace('_', '')
               
-              lines.append(f"# {status} Вопрос {idx}. {title_line}")
+              if entry.get("mode") == "buttons":
+                lines.append(f"# Вопрос {idx}. {title_line}")
+              else:
+                lines.append(f"# {status} Вопрос {idx}. {title_line}")
               lines.append("  ")
               # Add the full question text (excluding title line)
               question_text = entry.get("question", "").strip()
@@ -814,7 +817,7 @@ jobs:
                 if isinstance(shown_options, list) and len(shown_options) == 5:
                   for idx_opt, option in enumerate(shown_options, start=1):
                     if idx_opt in selected:
-                      lines.append(f"- [X] **Option {idx_opt}: {option}**")
+                      lines.append(f"- [X] {status} Option {idx_opt}: {option}")
                     else:
                       lines.append(f"- [ ] Option {idx_opt}: {option}")
                 else:
