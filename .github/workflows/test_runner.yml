@@ -719,19 +719,36 @@ jobs:
           def render_result_markdown(percent: int, answers_log: list[dict], ai_text: str | None):
             lines = []
             
-            # Calculate earned and max possible points (excluding text questions)
-            earned_points = 0
-            max_points_total = 0
+            # Calculate total points for the whole test
+            total_test_points = 0
+            text_questions_points = 0
+            button_questions_points = 0
+            button_earned_points = 0
+            
+            # First pass: calculate total points
+            questions, _ = load_test_json()
+            for q in questions:
+              q_points = q.get("max_points", 1)
+              total_test_points += q_points
+              if q.get("question_answer_type") == "text":
+                text_questions_points += q_points
+              else:
+                button_questions_points += q_points
+            
+            # Calculate earned points from button questions
             for entry in answers_log:
               if entry.get("mode") == "buttons":
-                earned_points += entry.get("points", 0)
-                max_points_total += entry.get("max_points", 1)
+                button_earned_points += entry.get("points", 0)
             
-            # Display as earned/max format
-            if max_points_total > 0:
-              lines.append(f"## Результат теста: {round(earned_points)}/{round(max_points_total)}%")
+            # Calculate percentages
+            if total_test_points > 0 and button_questions_points > 0:
+              # Percentage of total test points that come from button questions
+              button_percentage = round((button_questions_points / total_test_points) * 100)
+              # Percentage earned from button questions
+              earned_percentage = round((button_earned_points / button_questions_points) * button_percentage)
+              lines.append(f"Результат теста: {earned_percentage}/{button_percentage}%  ")
             else:
-              lines.append(f"## Результат теста: {percent}%")
+              lines.append(f"Результат теста: {percent}%  ")
 
             # Check if AI analysis is required
             ai_required = config.get("ai_analysis_required", False)
@@ -761,7 +778,15 @@ jobs:
               elif is_correct is False:
                 status = "❌"
               
-              lines.append(f"# {status} Вопрос {idx}. {entry.get("question", "").strip()}")
+              # Remove markdown formatting from question title
+              question_text = entry.get("question", "").strip()
+              # Extract title (first line) and remove markdown formatting
+              title_line = question_text.split('\n')[0] if question_text else ""
+              # Remove markdown headers (#, ##, etc.) and bold/italic
+              title_line = title_line.lstrip('#').strip()
+              title_line = title_line.replace('**', '').replace('__', '').replace('*', '').replace('_', '')
+              
+              lines.append(f"# {status} Вопрос {idx}. {title_line}")
               lines.append("  ")
 
               if entry.get("finished"):
@@ -775,13 +800,13 @@ jobs:
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("## ИИ анализ")
+                  lines.append("## ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
                   lines.append("  ")
                 continue
 
               # Display answer options for button questions
               if entry.get("mode") == "buttons":
-                lines.append("Answer options:")
+                lines.append("Варианты ответов:")
                 selected = entry.get("selected", [])
                 correct = entry.get("correct", [])
                 
@@ -799,7 +824,7 @@ jobs:
                   if found_options:
                     for idx_opt, option in enumerate(found_options, start=1):
                       if idx_opt in selected:
-                        lines.append(f"- **[X] Option {idx_opt}:** {option}")
+                        lines.append(f"- [X] **Option {idx_opt}: {option}**")
                       elif idx_opt == 6 and 6 not in selected:  # Don't show "I don't know" if not selected
                         continue
                       else:
@@ -1149,6 +1174,54 @@ jobs:
           put_file("Pau1R", "python2026_tasks", tasks_result_path, result_md, teacher_pat, f"Add test result {test_number} ({student_short})")
 
           result_link = build_result_link(student_github, "python2026", student_result_path)
+
+          # Run AI analysis if required
+          if config.get("ai_analysis_required", False) and openrouter_api_key and openrouter_api_key.strip():
+            try:
+              # Load the analysis prompt
+              analysis_prompt_url = gh_contents_url("Pau1R", "python2026", "misc/test_result_analysis_prompt.md")
+              _, analysis_prompt_data = gh_request("GET", analysis_prompt_url, teacher_pat)
+              if analysis_prompt_data and "content" in analysis_prompt_data:
+                import base64
+                analysis_prompt = base64.b64decode(analysis_prompt_data["content"]).decode('utf-8')
+                
+                # Prepare the analysis request
+                analysis_payload = {
+                  "result_file": result_md,
+                  "prompt": analysis_prompt
+                }
+                
+                # Call AI for analysis
+                ai_analysis_prompt = f"""Analyze the following test results using the provided prompt:
+
+                  PROMPT:
+                  {analysis_prompt}
+
+                  TEST RESULTS:
+                  {result_md}"""
+
+                ai_analysis = call_openrouter(ai_analysis_prompt)
+                
+                if ai_analysis:
+                  # Update result files with AI analysis
+                  updated_result_md = ai_analysis.strip()
+                  put_file(student_github, "python2026", student_result_path, updated_result_md, student_token, f"Update test result {test_number} ({student_short}) with AI analysis")
+                  put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, teacher_pat, f"Update test result {test_number} ({student_short}) with AI analysis")
+                  
+                  # Update the discussion to show AI analysis is complete
+                  try:
+                    disc = get_discussion()
+                    comments = (((disc.get("comments") or {}).get("nodes")) or [])
+                    for c in comments:
+                      if "ИИ анализ" in c.get("body", "") and "spinner" in c.get("body", ""):
+                        comment_id = c.get("id")
+                        if comment_id:
+                          update_comment(comment_id, "## ИИ анализ ✅")
+                          break
+                  except Exception:
+                    pass
+            except Exception as e:
+              print(f"AI analysis failed: {e}")
 
           try:
             disc = get_discussion()
