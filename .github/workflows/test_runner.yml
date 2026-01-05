@@ -358,12 +358,12 @@ jobs:
           def update_comment(target_comment_id: str, body: str):
             q = """
             mutation($id: ID!, $body: String!) {
-              updateIssueComment(input: {id: $id, body: $body}) {
-                issueComment { id }
+              updateDiscussionComment(input: {id: $id, body: $body}) {
+                comment { id }
               }
             }
             """
-            gh_graphql_classic(q, {"id": target_comment_id, "body": body})
+            gh_graphql_student(q, {"id": target_comment_id, "body": body})
 
 
           def add_discussion_comment(target_discussion_id: str, body: str):
@@ -783,8 +783,12 @@ jobs:
               
               lines.append(f"# {status} Вопрос {idx}. {title_line}")
               lines.append("  ")
-              # Add the full question text
-              lines.append(entry.get("question", "").strip())
+              # Add the full question text (excluding title line)
+              question_text = entry.get("question", "").strip()
+              # Remove the first line (title) from question body
+              question_lines = question_text.split('\n')
+              if len(question_lines) > 1:
+                lines.append('\n'.join(question_lines[1:]).strip())
               lines.append("  ")
 
               if entry.get("finished"):
@@ -793,12 +797,12 @@ jobs:
                 continue
 
               if entry.get("mode") == "text":
-                lines.append("Answer:")
+                lines.append("### Ответ")
                 lines.append(entry.get("answer", "").rstrip())
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("## ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
+                  lines.append("### ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
                   lines.append("  ")
                 continue
 
@@ -834,7 +838,7 @@ jobs:
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("## ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
+                  lines.append("### ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
                   lines.append("  ")
                 continue
 
