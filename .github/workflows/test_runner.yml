@@ -355,6 +355,17 @@ jobs:
             gh_graphql_classic(q, {"id": target_discussion_id, "body": body})
 
 
+          def update_comment(target_comment_id: str, body: str):
+            q = """
+            mutation($id: ID!, $body: String!) {
+              updateIssueComment(input: {id: $id, body: $body}) {
+                issueComment { id }
+              }
+            }
+            """
+            gh_graphql_classic(q, {"id": target_comment_id, "body": body})
+
+
           def add_discussion_comment(target_discussion_id: str, body: str):
             q = """
             mutation($id: ID!, $body: String!) {
@@ -709,6 +720,9 @@ jobs:
             lines = []
             lines.append(f"## Результат теста: {percent}%")
 
+            # Check if AI analysis is required
+            ai_required = config.get("ai_analysis_required", False)
+
             for idx, entry in enumerate(answers_log, start=1):
               # Determine if answer was correct
               is_correct = False
@@ -747,6 +761,10 @@ jobs:
                 lines.append("Answer:")
                 lines.append(entry.get("answer", "").rstrip())
                 lines.append("  ")
+                # Add AI analysis section header if AI is required
+                if ai_required:
+                  lines.append("## ИИ анализ")
+                  lines.append("  ")
                 continue
 
               # Display answer options for button questions
@@ -761,16 +779,20 @@ jobs:
                   questions, _ = load_test_json()
                   if q_id >= 0 and q_id < len(questions):
                     options = questions[q_id].get("options", [])
-                    for idx, option in enumerate(options, start=1):
-                      if idx in selected:
-                        lines.append(f"- **[X] Option {idx}:** {option}")
-                      elif idx == 6 and 6 not in selected:  # Don't show "I don't know" if not selected
+                    for idx_opt, option in enumerate(options, start=1):
+                      if idx_opt in selected:
+                        lines.append(f"- **[X] Option {idx_opt}:** {option}")
+                      elif idx_opt == 6 and 6 not in selected:  # Don't show "I don't know" if not selected
                         continue
                       else:
-                        lines.append(f"- [ ] Option {idx}: {option}")
+                        lines.append(f"- [ ] Option {idx_opt}: {option}")
                 except Exception:
                   lines.append(f"Selected: {selected}")
                 lines.append("  ")
+                # Add AI analysis section header if AI is required
+                if ai_required:
+                  lines.append("## ИИ анализ")
+                  lines.append("  ")
                 continue
 
 
@@ -990,6 +1012,21 @@ jobs:
 
               answers_log.append({"question": q_text, "mode": "text", "answer": ans, "score": None, "max_points": q.get("max_points", 1)})
               wrong_for_ai.append({"kind": "detailed", "question": q_text, "answer": ans})
+
+              # Update the comment to show it was accepted before deleting
+              try:
+                disc = get_discussion()
+                comments = disc.get("comments", {}).get("nodes", [])
+                if comments:
+                  last_comment = comments[-1]
+                  comment_id = last_comment.get("id")
+                  if comment_id and last_comment.get("body", "").strip() == ans.strip():
+                    # Update comment to show it was recorded
+                    update_comment(comment_id, "Ответ засчитан ✅")
+                    # Small delay to ensure the update is visible
+                    time.sleep(0.5)
+              except Exception:
+                pass
 
               update_tracker_progress(i + 1, total)
               continue
