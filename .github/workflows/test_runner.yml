@@ -718,7 +718,20 @@ jobs:
 
           def render_result_markdown(percent: int, answers_log: list[dict], ai_text: str | None):
             lines = []
-            lines.append(f"## Результат теста: {percent}%")
+            
+            # Calculate earned and max possible points (excluding text questions)
+            earned_points = 0
+            max_points_total = 0
+            for entry in answers_log:
+              if entry.get("mode") == "buttons":
+                earned_points += entry.get("points", 0)
+                max_points_total += entry.get("max_points", 1)
+            
+            # Display as earned/max format
+            if max_points_total > 0:
+              lines.append(f"## Результат теста: {round(earned_points)}/{round(max_points_total)}%")
+            else:
+              lines.append(f"## Результат теста: {percent}%")
 
             # Check if AI analysis is required
             ai_required = config.get("ai_analysis_required", False)
@@ -742,14 +755,13 @@ jobs:
               
               status = ""
               if is_correct is True:
-                status = " ✅"
+                status = "✅"
               elif is_correct == "partial":
-                status = f" ⚡ ({points}/{max_points})"
+                status = f"⚡ ({points}/{max_points})"
               elif is_correct is False:
-                status = " ❌"
+                status = "❌"
               
-              lines.append(f"## Вопрос {idx}{status}")
-              lines.append(entry.get("question", "").strip())
+              lines.append(f"# {status} Вопрос {idx}. {entry.get("question", "").strip()}")
               lines.append("  ")
 
               if entry.get("finished"):
@@ -772,20 +784,28 @@ jobs:
                 lines.append("Answer options:")
                 selected = entry.get("selected", [])
                 correct = entry.get("correct", [])
-                q_id = entry.get("question_id", 0) - 1  # Get question index
                 
-                # Load the original question to get options
+                # Find the matching question by comparing the text
                 try:
                   questions, _ = load_test_json()
-                  if q_id >= 0 and q_id < len(questions):
-                    options = questions[q_id].get("options", [])
-                    for idx_opt, option in enumerate(options, start=1):
+                  question_text = entry.get("question", "")
+                  found_options = None
+                  
+                  for q in questions:
+                    if q.get("question", "") == question_text:
+                      found_options = q.get("options", [])
+                      break
+                  
+                  if found_options:
+                    for idx_opt, option in enumerate(found_options, start=1):
                       if idx_opt in selected:
                         lines.append(f"- **[X] Option {idx_opt}:** {option}")
                       elif idx_opt == 6 and 6 not in selected:  # Don't show "I don't know" if not selected
                         continue
                       else:
                         lines.append(f"- [ ] Option {idx_opt}: {option}")
+                  else:
+                    lines.append(f"Selected: {selected}")
                 except Exception:
                   lines.append(f"Selected: {selected}")
                 lines.append("  ")
@@ -972,6 +992,7 @@ jobs:
 
           score = 0.0
           scored_questions = 0
+          max_possible_points = 0.0  # Track maximum possible points for scored questions
 
           started_at = time.time()
           finished_early = False
@@ -1052,6 +1073,7 @@ jobs:
               answers_log.append({"question": q_text, "mode": "buttons", "selected": [], "points": 0.0, "correct": [], "max_points": q.get("max_points", 1), "question_id": i + 1})
               wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": [], "correct": []})
               scored_questions += 1
+              max_possible_points += q.get("max_points", 1)  # Add to max possible points even for timeout
               update_tracker_progress(i + 1, total)
               continue
 
@@ -1080,6 +1102,7 @@ jobs:
 
             score += points
             scored_questions += 1
+            max_possible_points += max_points  # Add to max possible points
 
             entry = {
               "question": q_text,
@@ -1097,7 +1120,7 @@ jobs:
 
             update_tracker_progress(i + 1, total)
 
-          percent = round((score / max(1, scored_questions)) * 100)
+          percent = round((score / max(1, max_possible_points)) * 100)
 
           ai_text = None
           ai_done = False
