@@ -556,7 +556,6 @@ jobs:
             lines.append(f"- [ ] 6. Я не знаю ответа")
             lines.append("")
             lines.append(f"Вопрос {done + 1}/{total}")
-            lines.append(f"Прогресс: {done}/{total}")
             lines.append("")
             lines.append("- [ ] Завершить тест")
 
@@ -570,7 +569,6 @@ jobs:
             lines.append("Ответьте на вопрос обычным комментарием.")
             lines.append("")
             lines.append(f"Вопрос {done + 1}/{total}")
-            lines.append(f"Прогресс: {done}/{total}")
             return "\n".join(lines).rstrip() + "\n"
 
 
@@ -709,29 +707,72 @@ jobs:
 
           def render_result_markdown(percent: int, answers_log: list[dict], ai_text: str | None):
             lines = []
-            lines.append(f"{percent}%")
-            lines.append(f"Test: {lesson_number} / {lesson_folder} / {test_number}")
-            lines.append(f"Student: {student_short} ({student_github})")
-            lines.append("")
+            lines.append(f"## Результат теста: {percent}%")
 
-            for entry in answers_log:
-              lines.append("---")
+            for idx, entry in enumerate(answers_log, start=1):
+              # Determine if answer was correct
+              is_correct = False
+              points = entry.get("points", 0)
+              max_points = entry.get("max_points", 1)  # Default max points is 1
+              
+              if entry.get("mode") == "buttons":
+                if points == max_points:
+                  is_correct = True
+                elif points > 0 and points < max_points:
+                  is_correct = "partial"
+                else:
+                  is_correct = False
+              elif entry.get("mode") == "text":
+                # Text questions don't have automatic scoring
+                is_correct = None
+              
+              status = ""
+              if is_correct is True:
+                status = " ✅"
+              elif is_correct == "partial":
+                status = f" ⚡ ({points}/{max_points})"
+              elif is_correct is False:
+                status = " ❌"
+              
+              lines.append(f"## Вопрос {idx}{status}")
               lines.append(entry.get("question", "").strip())
-              lines.append("")
+              lines.append("  ")
 
               if entry.get("finished"):
                 lines.append("Finished early")
+                lines.append("  ")
                 continue
 
               if entry.get("mode") == "text":
                 lines.append("Answer:")
                 lines.append(entry.get("answer", "").rstrip())
+                lines.append("  ")
                 continue
 
-              sel = entry.get("selected")
-              pts = entry.get("points")
-              corr = entry.get("correct")
-              lines.append(f"Selected: {sel} | Points: {pts} | Correct: {corr}")
+              # Display answer options for button questions
+              if entry.get("mode") == "buttons":
+                lines.append("Answer options:")
+                selected = entry.get("selected", [])
+                correct = entry.get("correct", [])
+                q_id = entry.get("question_id", 0) - 1  # Get question index
+                
+                # Load the original question to get options
+                try:
+                  questions, _ = load_test_json()
+                  if q_id >= 0 and q_id < len(questions):
+                    options = questions[q_id].get("options", [])
+                    for idx, option in enumerate(options, start=1):
+                      if idx in selected:
+                        lines.append(f"- **[X] Option {idx}:** {option}")
+                      elif idx == 6 and 6 not in selected:  # Don't show "I don't know" if not selected
+                        continue
+                      else:
+                        lines.append(f"- [ ] Option {idx}: {option}")
+                except Exception:
+                  lines.append(f"Selected: {selected}")
+                lines.append("  ")
+                continue
+
 
             if ai_text:
               lines.append("\n---\n")
@@ -923,7 +964,7 @@ jobs:
 
           for i, q in enumerate(questions):
             if time.time() >= effective_deadline_ts:
-              answers_log.append({"question": q.get("question", ""), "finished": True, "reason": "time_limit"})
+              answers_log.append({"question": q_text, "finished": True, "reason": "time_limit", "max_points": q.get("max_points", 1)})
               finished_early = True
               break
 
@@ -938,16 +979,16 @@ jobs:
                 enforce_deadline()
                 ans = wait_for_text_answer(int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
               except TimeLimitReached:
-                answers_log.append({"question": q_text, "finished": True, "reason": "time_limit"})
+                answers_log.append({"question": q_text, "finished": True, "reason": "time_limit", "max_points": q.get("max_points", 1)})
                 finished_early = True
                 break
               except TimeoutError:
-                answers_log.append({"question": q_text, "mode": "text", "answer": "(timeout)"})
+                answers_log.append({"question": q_text, "mode": "text", "answer": "(timeout)", "score": None, "max_points": q.get("max_points", 1)})
                 wrong_for_ai.append({"kind": "detailed", "question": q_text, "answer": "(timeout)"})
                 update_tracker_progress(i + 1, total)
                 continue
 
-              answers_log.append({"question": q_text, "mode": "text", "answer": ans, "score": None})
+              answers_log.append({"question": q_text, "mode": "text", "answer": ans, "score": None, "max_points": q.get("max_points", 1)})
               wrong_for_ai.append({"kind": "detailed", "question": q_text, "answer": ans})
 
               update_tracker_progress(i + 1, total)
@@ -967,11 +1008,11 @@ jobs:
               enforce_deadline()
               kind, selected = wait_for_buttons_answer(template, int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
             except TimeLimitReached:
-              answers_log.append({"question": q_text, "finished": True, "reason": "time_limit"})
+              answers_log.append({"question": q_text, "finished": True, "reason": "time_limit", "max_points": q.get("max_points", 1)})
               finished_early = True
               break
             except TimeoutError:
-              answers_log.append({"question": q_text, "mode": "buttons", "selected": [], "points": 0.0, "correct": []})
+              answers_log.append({"question": q_text, "mode": "buttons", "selected": [], "points": 0.0, "correct": [], "max_points": q.get("max_points", 1), "question_id": i + 1})
               wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": [], "correct": []})
               scored_questions += 1
               update_tracker_progress(i + 1, total)
@@ -979,7 +1020,7 @@ jobs:
 
             if kind == "finish":
               if confirm_finish(template):
-                answers_log.append({"question": q_text, "finished": True})
+                answers_log.append({"question": q_text, "finished": True, "max_points": q.get("max_points", 1)})
                 finished_early = True
                 break
               enforce_deadline()
@@ -989,13 +1030,14 @@ jobs:
 
             points = 0.0
             correct_original = [idx for idx, v in enumerate(answers) if int(v) == 1]
+            max_points = q.get("max_points", 1)  # Get max_points from question config, default to 1
 
             if selected == [6]:
-              points = 0.2
+              points = 0.2 * max_points  # Scale partial points by max_points
             else:
               selected_original = sorted({perm[x - 1] for x in selected if 1 <= x <= 5})
               if selected_original == sorted(correct_original):
-                points = 1.0
+                points = max_points  # Full points
               else:
                 points = 0.0
 
@@ -1008,6 +1050,8 @@ jobs:
               "selected": selected,
               "points": points,
               "correct": correct_original,
+              "max_points": max_points,
+              "question_id": i + 1,  # Store question ID (1-based)
             }
             answers_log.append(entry)
 
