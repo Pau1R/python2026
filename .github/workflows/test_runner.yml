@@ -1178,6 +1178,26 @@ jobs:
 
           result_link = build_result_link(student_github, "python2026", student_result_path)
 
+          # Update tracker with result link immediately
+          try:
+            update_tracker_progress(0, total, final_percent=percent, result_link=result_link)
+          except Exception:
+            pass
+
+          # Update discussion with result link immediately
+          try:
+            final_body = "\n".join([
+              "# Тест завершен",
+              "",
+              f"[Результат теста]({result_link})",
+              "",
+              "AI-анализ выполняется..." if config.get("ai_analysis_required", False) else "",
+              "",
+            ]).rstrip() + "\n"
+            update_discussion_body(discussion_id, final_body)
+          except Exception:
+            pass
+
           # Run AI analysis if required
           if config.get("ai_analysis_required", False) and openrouter_api_key and openrouter_api_key.strip():
             try:
@@ -1239,17 +1259,8 @@ jobs:
           except Exception:
             pass
 
-          final_body = "\n".join([
-            "# Тест завершен",
-            "",
-            f"[Результат теста]({result_link})",
-            "",
-            "AI-анализ выполнен." if ai_done else "",
-            "",
-          ]).rstrip() + "\n"
-
           try:
-            update_discussion_body(discussion_id, final_body)
+            delete_discussion(discussion_id)
           except Exception:
             pass
 
@@ -1263,11 +1274,6 @@ jobs:
 
           try:
             delete_discussion(discussion_id)
-          except Exception:
-            pass
-
-          try:
-            update_tracker_progress(0, total, final_percent=percent, result_link=result_link)
           except Exception:
             pass
 
