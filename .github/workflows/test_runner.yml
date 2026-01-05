@@ -358,8 +358,8 @@ jobs:
           def update_comment(target_comment_id: str, body: str):
             q = """
             mutation($id: ID!, $body: String!) {
-              updateDiscussionComment(input: {id: $id, body: $body}) {
-                comment { id }
+              updateDiscussionComment(input: {discussionCommentId: $id, body: $body}) {
+                discussionComment { id }
               }
             }
             """
@@ -1040,16 +1040,17 @@ jobs:
               wrong_for_ai.append({"kind": "detailed", "question": q_text, "answer": ans})
 
               # Update the comment to show it was accepted before deleting
-              try:
-                if comment_id:
-                  # Update comment to show it was recorded
+              if comment_id:
+                try:
                   update_comment(comment_id, "Ответ засчитан ✅")
-                  # Small delay to ensure the update is visible
                   time.sleep(0.5)
-                  # Now delete the comment
+                except Exception as e:
+                  print(f"Failed to update text answer comment {comment_id}: {e}")
+
+                try:
                   delete_discussion_comment(comment_id)
-              except Exception:
-                pass
+                except Exception as e:
+                  print(f"Failed to delete text answer comment {comment_id}: {e}")
 
               update_tracker_progress(i + 1, total)
               continue
@@ -1213,7 +1214,7 @@ jobs:
                       if "ИИ анализ" in c.get("body", "") and "spinner" in c.get("body", ""):
                         comment_id = c.get("id")
                         if comment_id:
-                          update_comment(comment_id, "## ИИ анализ ✅")
+                          update_comment(comment_id, "### ИИ анализ ✅")
                           break
                   except Exception:
                     pass
