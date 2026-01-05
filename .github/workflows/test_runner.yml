@@ -788,6 +788,9 @@ jobs:
               
               lines.append(f"# {status} Вопрос {idx}. {title_line}")
               lines.append("  ")
+              # Add the full question text
+              lines.append(entry.get("question", "").strip())
+              lines.append("  ")
 
               if entry.get("finished"):
                 lines.append("Finished early")
@@ -836,7 +839,7 @@ jobs:
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("## ИИ анализ")
+                  lines.append("## ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
                   lines.append("  ")
                 continue
 
