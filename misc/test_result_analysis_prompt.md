@@ -19,8 +19,8 @@ For EVERY "## ИИ анализ ![spinner](...])" placeholder:
 
 ### 2. Calculate Text Question Score
 If the file contains text questions:
-1. Find "Результат теста: X/Y%" line
-2. Add immediately below: "Обновленный результат: A/B%"
+1. Find "Вопросы с выбором варианта: X/Y%" line
+2. Add immediately below: "Вопросы с текстовыми ответами: A/B%"
    where:
    - A = total points earned on text questions (0 to B)
    - B = total possible points for all text questions
@@ -43,4 +43,4 @@ Test has 5 questions total (100%):
 
 If student earns 2.0 out of 2.5 on text questions (which is 35% of total test):
 Calculate percentage: (2.0/2.5) × 35 = 28%
-Add: "Обновленный результат: 28/35%"
+Add: "Вопросы с текстовыми ответами: 28/35%"

@@ -5,7 +5,7 @@ on:
     secrets:
       TEACHER_PAT:
         required: true
-      OPENROUTER_API_KEY:
+      DEEPSEEK_API_KEY:
         required: true
       TASKS_REPO_CLASSIC_TOKEN:
         required: true
@@ -178,7 +178,7 @@ jobs:
           STUDENT_TOKEN: ${{ github.token }}
           TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
           TASKS_REPO_CLASSIC_TOKEN: ${{ secrets.TASKS_REPO_CLASSIC_TOKEN }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DISCUSSION_NODE_ID: ${{ steps.meta.outputs.discussion_node_id }}
           TEST_NUMBER: ${{ steps.meta.outputs.test_number }}
           LESSON_FOLDER: ${{ steps.meta.outputs.lesson_folder }}
@@ -265,7 +265,7 @@ jobs:
           student_token = os.environ.get("STUDENT_TOKEN", "")
           teacher_pat = os.environ.get("TEACHER_PAT", "")
           tasks_repo_classic_token = os.environ.get("TASKS_REPO_CLASSIC_TOKEN", "")
-          openrouter_api_key = os.environ.get("OPENROUTER_API_KEY", "")
+          deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
           discussion_id = os.environ.get("DISCUSSION_NODE_ID", "").strip()
           tracker_discussion_id = os.environ.get("TRACKER_DISCUSSION_ID", "").strip()
@@ -746,9 +746,9 @@ jobs:
               button_percentage = round((button_questions_points / total_test_points) * 100)
               # Percentage earned from button questions
               earned_percentage = round((button_earned_points / button_questions_points) * button_percentage)
-              lines.append(f"Результат теста: {earned_percentage}/{button_percentage}%  ")
+              lines.append(f"Вопросы с выбором варианта: {earned_percentage}/{button_percentage}%  ")
             else:
-              lines.append(f"Результат теста: {percent}%  ")
+              lines.append(f"Вопросы с выбором варианта: {percent}%  ")
 
             # Check if AI analysis is required
             ai_required = config.get("ai_analysis_required", False)
@@ -915,65 +915,43 @@ jobs:
             return text.strip()
 
 
-          def load_models(url: str):
+          def call_deepseek(prompt: str):
+            url = "https://api.deepseek.com/chat/completions"
+            model = os.environ.get("DEEPSEEK_MODEL", "deepseek-coder")
+
+            payload = {
+              "model": model,
+              "temperature": 0.1,
+              "messages": [
+                {"role": "system", "content": "You analyze student test answers and explain mistakes."},
+                {"role": "user", "content": prompt},
+              ],
+            }
+
+            req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                "Authorization": f"Bearer {deepseek_api_key}",
+                "Content-Type": "application/json",
+              },
+              method="POST",
+            )
+
             try:
-              with urllib.request.urlopen(url, timeout=30) as resp:
-                txt = resp.read().decode("utf-8", errors="ignore")
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                obj = json.loads(resp.read().decode("utf-8", errors="ignore"))
             except Exception:
-              return []
-
-            models = []
-            for line in txt.splitlines():
-              line = line.strip()
-              if not line or line.startswith("#"):
-                continue
-              models.append(line)
-            return models
-
-
-          def call_openrouter(prompt: str):
-            models_url = "https://raw.githubusercontent.com/Pau1R/python2026/main/misc/openrouter%20models.txt"
-            models = load_models(models_url)
-            if not models:
               return None
 
-            for model in models:
-              url = "https://openrouter.ai/api/v1/chat/completions"
-              payload = {
-                "model": model,
-                "temperature": 0.1,
-                "messages": [
-                  {"role": "system", "content": "You analyze student test answers and explain mistakes."},
-                  {"role": "user", "content": prompt},
-                ],
-              }
+            choices = obj.get("choices") or []
+            if not choices:
+              return None
 
-              req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                  "Authorization": f"Bearer {openrouter_api_key}",
-                  "Content-Type": "application/json",
-                  "HTTP-Referer": "https://github.com/Pau1R/python2026",
-                  "X-Title": "python2026-test-runner",
-                },
-                method="POST",
-              )
-
-              try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                  obj = json.loads(resp.read().decode("utf-8", errors="ignore"))
-              except Exception:
-                continue
-
-              choices = obj.get("choices") or []
-              if not choices:
-                continue
-
-              message = choices[0].get("message") or {}
-              content = (message.get("content") or "").strip()
-              if content:
-                return content
+            message = choices[0].get("message") or {}
+            content = (message.get("content") or "").strip()
+            if content:
+              return content
 
             return None
 
@@ -1152,7 +1130,7 @@ jobs:
 
           ai_text = None
           ai_done = False
-          if ai_allowed and openrouter_api_key and openrouter_api_key.strip():
+          if ai_allowed and deepseek_api_key and deepseek_api_key.strip():
             prompt_template = load_ai_prompt()
             if prompt_template:
               payload = {
@@ -1164,7 +1142,7 @@ jobs:
                 "test": test_number,
               }
               prompt = prompt_template + "\n\n" + json.dumps(payload, ensure_ascii=False)
-              ai_text = call_openrouter(prompt)
+              ai_text = call_deepseek(prompt)
               if ai_text:
                 ai_done = True
 
@@ -1191,7 +1169,7 @@ jobs:
               "",
               f"[Результат теста]({result_link})",
               "",
-              "AI-анализ выполняется..." if config.get("ai_analysis_required", False) else "",
+              "AI-анализ выполняется..." if config.get("ai_analysis_required", False) and deepseek_api_key and deepseek_api_key.strip() else "",
               "",
             ]).rstrip() + "\n"
             update_discussion_body(discussion_id, final_body)
@@ -1199,7 +1177,7 @@ jobs:
             pass
 
           # Run AI analysis if required
-          if config.get("ai_analysis_required", False) and openrouter_api_key and openrouter_api_key.strip():
+          if config.get("ai_analysis_required", False) and deepseek_api_key and deepseek_api_key.strip():
             try:
               # Load the analysis prompt
               analysis_prompt_url = gh_contents_url("Pau1R", "python2026", "misc/test_result_analysis_prompt.md")
@@ -1223,7 +1201,7 @@ jobs:
                   TEST RESULTS:
                   {result_md}"""
 
-                ai_analysis = call_openrouter(ai_analysis_prompt)
+                ai_analysis = call_deepseek(ai_analysis_prompt)
                 
                 if ai_analysis:
                   # Update result files with AI analysis
