@@ -802,7 +802,7 @@ jobs:
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("### ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
+                  lines.append("### ИИ анализ <img src="https://github.com/Pau1R/python2026/blob/main/misc/loading.gif" width="36" height="12">")
                   lines.append("  ")
                 continue
 
@@ -838,7 +838,7 @@ jobs:
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("### ИИ анализ ![spinner](https://github.githubassets.com/images/spinners/octocat-spinner-32.gif)")
+                  lines.append("### ИИ анализ <img src="https://github.com/Pau1R/python2026/blob/main/misc/loading.gif" width="36" height="12">")
                   lines.append("  ")
                 continue
 
@@ -1166,7 +1166,7 @@ jobs:
               "",
               f"[Результат теста]({result_link})",
               "",
-              "AI-анализ выполняется..." if config.get("ai_analysis_required", False) and deepseek_api_key and deepseek_api_key.strip() else "",
+              "AI-анализ выполняется <img src=\"https://github.com/Pau1R/python2026/blob/main/misc/loading.gif\" width=\"36\" height=\"12\">" if config.get("ai_analysis_required", False) and deepseek_api_key and deepseek_api_key.strip() else "",
               "",
             ]).rstrip() + "\n"
             update_discussion_body(discussion_id, final_body)
