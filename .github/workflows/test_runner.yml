@@ -817,9 +817,9 @@ jobs:
                 if isinstance(shown_options, list) and len(shown_options) == 5:
                   for idx_opt, option in enumerate(shown_options, start=1):
                     if idx_opt in selected:
-                      lines.append(f"- [X] {status} Option {idx_opt}: {option}")
+                      lines.append(f"{idx_opt}) {status} {option}")
                     else:
-                      lines.append(f"- [ ] Option {idx_opt}: {option}")
+                      lines.append(f"{idx_opt}) {option}")
                 else:
                   lines.append(f"Selected: {selected}")
                 lines.append("  ")
@@ -1160,7 +1160,7 @@ jobs:
               "",
               f"[Результат теста]({result_link})",
               "",
-              "AI-анализ выполняется <img src=\"https://github.com/Pau1R/python2026/blob/main/misc/loading.gif\" width=\"36\" height=\"12\">" if config.get("ai_analysis_required", False) and deepseek_api_key and deepseek_api_key.strip() else "",
+              "AI-анализ выполняется <img src=\"https://raw.githubusercontent.com/Pau1R/python2026/main/misc/loading.gif\" width=\"36\" height=\"12\" />" if config.get("ai_analysis_required", False) and deepseek_api_key and deepseek_api_key.strip() else "",
               "",
             ]).rstrip() + "\n"
             update_discussion_body(discussion_id, final_body)

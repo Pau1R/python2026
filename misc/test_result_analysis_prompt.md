@@ -34,8 +34,9 @@ If the file contains text questions:
 1. Find "Вопросы с выбором варианта: X/Y%" line
 2. Add immediately below: "Вопросы с текстовыми ответами: A/B%"
    where:
-   - A = total points earned on text questions (0 to B)
-   - B = total possible points for all text questions
+   - B = percent weight of all text questions in the whole test (for example 35)
+   - A = percent earned from text questions, calculated from points and scaled to B
+   - Both A and B are percentages of the whole test (not raw points)
    
 ### SCORING CRITERIA
 - Full points: Complete, correct answer with good explanation
@@ -49,10 +50,21 @@ If the file contains text questions:
 - Use clear, encouraging language appropriate for teaching
 
 ## EXAMPLE
-Test has 5 questions total (100%):
-- 3 button questions = 65% of total points
-- 2 text questions = 35% of total points (2.5 points possible)
+Test has 5 questions total (100% total):
+- Button questions are worth 65% of the total test
+- Text questions are worth 35% of the total test
 
-If student earns 2.0 out of 2.5 on text questions (which is 35% of total test):
-Calculate percentage: (2.0/2.5) × 35 = 28%
-Add: "Вопросы с текстовыми ответами: 28/35%"
+Text questions total possible points: B = 2.5
+Student earned on text questions: earned_points = 2.0
+
+Step 1. Convert text points to a fraction of text max points:
+text_fraction = earned_points / B = 2.0 / 2.5 = 0.8
+
+Step 2. Convert that fraction to the percent share of the whole test:
+text_percent = text_fraction * 35 = 0.8 * 35 = 28
+
+Step 3. Round to an integer percent (use normal rounding):
+text_percent_rounded = 28
+
+Write the line exactly like this:
+"Вопросы с текстовыми ответами: 28/35%"
