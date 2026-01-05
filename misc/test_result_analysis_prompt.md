@@ -17,6 +17,10 @@ For EVERY "### ИИ анализ <img...>" placeholder:
   - Areas for improvement
 - Keep analysis concise but detailed and informative (2-4 sentences)
 
+Formatting rule (important for GitHub):
+- Write the analysis as multiple short lines.
+- End EACH line with two spaces "  " to force a line break in GitHub Markdown.
+
 For EVERY text question, also update the text answer title:
 - Find the line "### Ответ" within that question block
 - Replace it with one of:

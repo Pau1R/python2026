@@ -801,7 +801,12 @@ jobs:
 
               if entry.get("mode") == "text":
                 lines.append("### Ответ")
-                lines.append(entry.get("answer", "").rstrip())
+                ans_text = (entry.get("answer", "") or "").replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+                if ans_text:
+                  for l in ans_text.split("\n"):
+                    lines.append(l.rstrip() + "  ")
+                else:
+                  lines.append("  ")
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
