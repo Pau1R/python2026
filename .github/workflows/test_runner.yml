@@ -568,7 +568,7 @@ jobs:
             lines.append("")
             lines.append(f"Вопрос {done + 1}/{total}")
             lines.append("")
-            lines.append("- [ ] Завершить тест")
+            lines.append("- [ ] Завершить тест досрочно")
 
             return "\n".join(lines).rstrip() + "\n", perm
 
@@ -649,12 +649,7 @@ jobs:
                 if not body:
                   continue
                 cid = c.get("id")
-                if cid:
-                  try:
-                    delete_discussion_comment(cid)
-                  except Exception:
-                    pass
-                return body
+                return body, cid
               time.sleep(1)
             raise TimeoutError("Timeout waiting for text answer")
 
@@ -1026,7 +1021,7 @@ jobs:
 
               try:
                 enforce_deadline()
-                ans = wait_for_text_answer(int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
+                ans, comment_id = wait_for_text_answer(int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
               except TimeLimitReached:
                 answers_log.append({"question": q_text, "finished": True, "reason": "time_limit", "max_points": q.get("max_points", 1)})
                 finished_early = True
@@ -1042,16 +1037,13 @@ jobs:
 
               # Update the comment to show it was accepted before deleting
               try:
-                disc = get_discussion()
-                comments = disc.get("comments", {}).get("nodes", [])
-                if comments:
-                  last_comment = comments[-1]
-                  comment_id = last_comment.get("id")
-                  if comment_id and last_comment.get("body", "").strip() == ans.strip():
-                    # Update comment to show it was recorded
-                    update_comment(comment_id, "Ответ засчитан ✅")
-                    # Small delay to ensure the update is visible
-                    time.sleep(0.5)
+                if comment_id:
+                  # Update comment to show it was recorded
+                  update_comment(comment_id, "Ответ засчитан ✅")
+                  # Small delay to ensure the update is visible
+                  time.sleep(0.5)
+                  # Now delete the comment
+                  delete_discussion_comment(comment_id)
               except Exception:
                 pass
 
