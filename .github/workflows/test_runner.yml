@@ -570,7 +570,7 @@ jobs:
             lines.append("")
             lines.append("- [ ] Завершить тест досрочно")
 
-            return "\n".join(lines).rstrip() + "\n", perm
+            return "\n".join(lines).rstrip() + "\n", perm, shuffled
 
 
           def render_text_page(question_text: str, done: int, total: int):
@@ -802,7 +802,7 @@ jobs:
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("### ИИ анализ <img src="https://github.com/Pau1R/python2026/blob/main/misc/loading.gif" width="36" height="12">")
+                  lines.append("### ИИ анализ <img src=\"https://github.com/Pau1R/python2026/blob/main/misc/loading.gif\" width=\"36\" height=\"12\">")
                   lines.append("  ")
                 continue
 
@@ -810,35 +810,19 @@ jobs:
               if entry.get("mode") == "buttons":
                 lines.append("Варианты ответов:")
                 selected = entry.get("selected", [])
-                correct = entry.get("correct", [])
-                
-                # Find the matching question by comparing the text
-                try:
-                  questions, _ = load_test_json()
-                  question_text = entry.get("question", "")
-                  found_options = None
-                  
-                  for q in questions:
-                    if q.get("question", "") == question_text:
-                      found_options = q.get("options", [])
-                      break
-                  
-                  if found_options:
-                    for idx_opt, option in enumerate(found_options, start=1):
-                      if idx_opt in selected:
-                        lines.append(f"- [X] **Option {idx_opt}: {option}**")
-                      elif idx_opt == 6 and 6 not in selected:  # Don't show "I don't know" if not selected
-                        continue
-                      else:
-                        lines.append(f"- [ ] Option {idx_opt}: {option}")
-                  else:
-                    lines.append(f"Selected: {selected}")
-                except Exception:
+                shown_options = entry.get("options") or []
+                if isinstance(shown_options, list) and len(shown_options) == 5:
+                  for idx_opt, option in enumerate(shown_options, start=1):
+                    if idx_opt in selected:
+                      lines.append(f"- [X] **Option {idx_opt}: {option}**")
+                    else:
+                      lines.append(f"- [ ] Option {idx_opt}: {option}")
+                else:
                   lines.append(f"Selected: {selected}")
                 lines.append("  ")
                 # Add AI analysis section header if AI is required
                 if ai_required:
-                  lines.append("### ИИ анализ <img src="https://github.com/Pau1R/python2026/blob/main/misc/loading.gif" width="36" height="12">")
+                  lines.append("### ИИ анализ <img src=\"https://github.com/Pau1R/python2026/blob/main/misc/loading.gif\" width=\"36\" height=\"12\">")
                   lines.append("  ")
                 continue
 
@@ -1062,7 +1046,7 @@ jobs:
             if not isinstance(answers, list) or len(answers) != 5:
               raise SystemExit("Buttons mode question must have 5 answers")
 
-            template, perm = render_buttons_page(q_text, options, i, total)
+            template, perm, shuffled_options = render_buttons_page(q_text, options, i, total)
             update_discussion_body(discussion_id, template)
 
             try:
@@ -1073,8 +1057,11 @@ jobs:
               finished_early = True
               break
             except TimeoutError:
-              answers_log.append({"question": q_text, "mode": "buttons", "selected": [], "points": 0.0, "correct": [], "max_points": q.get("max_points", 1), "question_id": i + 1})
-              wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": [], "correct": []})
+              correct_original = [idx for idx, v in enumerate(answers) if int(v) == 1]
+              inv_perm = {orig_idx: shown_idx for shown_idx, orig_idx in enumerate(perm)}
+              correct_shown = sorted([inv_perm[idx] + 1 for idx in correct_original if idx in inv_perm])
+              answers_log.append({"question": q_text, "mode": "buttons", "selected": [], "points": 0.0, "correct": correct_shown, "max_points": q.get("max_points", 1), "question_id": i + 1, "options": shuffled_options})
+              wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": [], "correct": correct_shown, "options": shuffled_options})
               scored_questions += 1
               max_possible_points += q.get("max_points", 1)  # Add to max possible points even for timeout
               update_tracker_progress(i + 1, total)
@@ -1094,6 +1081,9 @@ jobs:
             correct_original = [idx for idx, v in enumerate(answers) if int(v) == 1]
             max_points = q.get("max_points", 1)  # Get max_points from question config, default to 1
 
+            inv_perm = {orig_idx: shown_idx for shown_idx, orig_idx in enumerate(perm)}
+            correct_shown = sorted([inv_perm[idx] + 1 for idx in correct_original if idx in inv_perm])
+
             if selected == [6]:
               points = 0.2 * max_points  # Scale partial points by max_points
             else:
@@ -1112,14 +1102,15 @@ jobs:
               "mode": "buttons",
               "selected": selected,
               "points": points,
-              "correct": correct_original,
+              "correct": correct_shown,
               "max_points": max_points,
               "question_id": i + 1,  # Store question ID (1-based)
+              "options": shuffled_options,
             }
             answers_log.append(entry)
 
             if points < 1.0 and selected != [6]:
-              wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": selected, "correct": correct_original})
+              wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": selected, "correct": correct_shown, "options": shuffled_options})
 
             update_tracker_progress(i + 1, total)
 
