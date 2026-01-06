@@ -904,6 +904,22 @@ jobs:
             return mc_score, tx_score
 
 
+          def append_test_summary(result_md_text: str):
+            mc_score, tx_score = extract_section_scores(result_md_text)
+            if not tx_score:
+              tx_score = "0"
+
+            run_date = time.strftime("%d.%m")
+            results_path = f"lessons/{lesson_folder}/tests/test_results.md"
+
+            prev = get_file_text("Pau1R", "python2026_tasks", results_path, teacher_pat)
+            if prev and not prev.endswith("\n"):
+              prev += "\n"
+
+            line = f"{student_short},{mc_score},{tx_score},{run_date}\n"
+            put_file("Pau1R", "python2026_tasks", results_path, prev + line, teacher_pat, f"Append test summary {test_number} ({student_short})")
+
+
           def delete_file(owner: str, repo: str, path: str, token: str, message: str):
             url = gh_contents_url(owner, repo, path)
 
@@ -1239,21 +1255,6 @@ jobs:
                   updated_result_md = ai_analysis.strip()
                   put_file(student_github, "python2026", student_result_path, updated_result_md, student_token, f"Update test result {test_number} ({student_short}) with AI analysis")
                   put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, teacher_pat, f"Update test result {test_number} ({student_short}) with AI analysis")
-
-                  # Append test summary to per-lesson results file after AI analysis is finished
-                  try:
-                    mc_score, tx_score = extract_section_scores(updated_result_md)
-                    run_date = time.strftime("%d.%m")
-                    results_path = f"lessons/{lesson_folder}/tests/test_results.md"
-
-                    prev = get_file_text("Pau1R", "python2026_tasks", results_path, teacher_pat)
-                    if prev and not prev.endswith("\n"):
-                      prev += "\n"
-
-                    line = f"{student_short},{mc_score},{tx_score},{run_date}\n"
-                    put_file("Pau1R", "python2026_tasks", results_path, prev + line, teacher_pat, f"Append test summary {test_number} ({student_short})")
-                  except Exception as e:
-                    print(f"Failed to append test summary to test_results.md: {e}")
                   
                   # Update the discussion to show AI analysis is complete
                   try:
@@ -1269,6 +1270,13 @@ jobs:
                     pass
             except Exception as e:
               print(f"AI analysis failed: {e}")
+
+          # Append test summary once per run, even if AI analysis was skipped or failed
+          try:
+            final_result_md = updated_result_md if 'updated_result_md' in locals() else result_md
+            append_test_summary(final_result_md)
+          except Exception as e:
+            print(f"Failed to append test summary to test_results.md: {e}")
 
           try:
             disc = get_discussion()

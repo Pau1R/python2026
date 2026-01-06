@@ -43,10 +43,23 @@ If the file contains text questions:
 1. Find "Вопросы с выбором варианта: X/Y%" line
 2. Add immediately below: "Вопросы с текстовыми ответами: A/B%"
    where:
-   - B = percent weight of all text questions in the whole test (for example 35)
-   - A = percent earned from text questions, calculated from points and scaled to B
+   - Y = percent weight of all multiple-choice questions in the whole test (already present in file)
+   - B = percent weight of all text questions in the whole test
+   - Hard rule: Y + B MUST equal 100
+   - Since you must not change multiple-choice scores, treat Y as ground truth and set:
+     - B = 100 - Y
+   - A = percent earned from text questions, computed from points and scaled to B
    - Both A and B are percentages of the whole test (not raw points)
-   
+
+  Formula:
+  - text_fraction = text_earned_points / text_max_points
+  - A = round(text_fraction * B)
+
+  Consistency check (must hold in output):
+  - Denominators MUST add up to 100, so the two lines must look like:
+    - "Вопросы с выбором варианта: X/Y%"
+    - "Вопросы с текстовыми ответами: A/(100-Y)%"
+
 ### SCORING CRITERIA
 - Full points: Complete, correct answer with good explanation
 - Partial points: Partially correct or incomplete explanation
@@ -63,17 +76,24 @@ Test has 5 questions total (100% total):
 - Button questions are worth 65% of the total test
 - Text questions are worth 35% of the total test
 
-Text questions total possible points: B = 2.5
-Student earned on text questions: earned_points = 2.0
+Text questions total possible points: text_max_points = 2.5
+Student earned on text questions: text_earned_points = 2.0
 
 Step 1. Convert text points to a fraction of text max points:
-text_fraction = earned_points / B = 2.0 / 2.5 = 0.8
+text_fraction = text_earned_points / text_max_points = 2.0 / 2.5 = 0.8
 
 Step 2. Convert that fraction to the percent share of the whole test:
-text_percent = text_fraction * 35 = 0.8 * 35 = 28
+text_weight_percent = 35
+text_percent = text_fraction * text_weight_percent = 0.8 * 35 = 28
 
 Step 3. Round to an integer percent (use normal rounding):
 text_percent_rounded = 28
 
 Write the line exactly like this:
 "Вопросы с текстовыми ответами: 28/35%"
+
+Normalization example (this is the common failure case to avoid):
+- If the multiple-choice line is "Вопросы с выбором варианта: 30/45%"
+- Then the text weight MUST be 100 - 45 = 55 (not 40)
+- If the text line would otherwise be "50/40%", you must output it as "50/55%" instead
+- Total becomes "(30+50)/(45+55)" => "80/100%"

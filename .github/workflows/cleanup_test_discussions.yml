@@ -1,0 +1,300 @@
+name: Cleanup Test Discussions
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_number:
+        description: 'Test number like 41.2'
+        required: true
+        type: string
+      students:
+        description: 'Optional comma/space separated student short names (e.g. EvgeniyD,Mars). If empty, run for all.'
+        required: false
+        type: string
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout tasks repo
+        uses: actions/checkout@v4
+        with:
+          repository: Pau1R/python2026_tasks
+          token: ${{ secrets.TEACHER_PAT }}
+          path: tasks
+
+      - name: Resolve lesson folder and students
+        id: meta
+        shell: python
+        env:
+          TEST_NUMBER: ${{ inputs.test_number }}
+          STUDENTS_FILTER: ${{ inputs.students || '' }}
+        run: |
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          test_number = os.environ.get('TEST_NUMBER', '').strip()
+          students_filter_raw = os.environ.get('STUDENTS_FILTER', '').strip()
+          if not test_number:
+            raise SystemExit('TEST_NUMBER is required')
+
+          m = re.match(r'^(\d+)(?:\.(\d+))?$', test_number)
+          if not m:
+            raise SystemExit(f'Invalid test number: {test_number}')
+          lesson_number = int(m.group(1))
+
+          repo_root = Path('tasks')
+          lessons_dir = repo_root / 'lessons'
+          if not lessons_dir.is_dir():
+            raise SystemExit('tasks/lessons/ directory not found')
+
+          lesson_folder = None
+          prefix = f'lesson {lesson_number} '
+          for child in lessons_dir.iterdir():
+            if child.is_dir() and child.name.lower().startswith(prefix.lower()):
+              lesson_folder = child.name
+              break
+
+          if not lesson_folder:
+            raise SystemExit(f'Lesson folder for lesson {lesson_number} not found under tasks/lessons/')
+
+          mapping_path = repo_root / 'name_mapping.md'
+          if not mapping_path.is_file():
+            raise SystemExit('tasks/name_mapping.md not found')
+
+          students = []
+          for line in mapping_path.read_text(encoding='utf-8').splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+              continue
+            if '|' not in line:
+              continue
+            short, gh = [p.strip() for p in line.split('|', 1)]
+            if short and gh:
+              students.append({'short': short, 'github': gh})
+
+          if students_filter_raw:
+            tokens = [t.strip() for t in re.split(r'[\s,;]+', students_filter_raw) if t.strip()]
+            requested = list(dict.fromkeys(tokens))
+            available = {s['short']: s for s in students}
+            missing = [name for name in requested if name not in available]
+            if missing:
+              raise SystemExit(f"Unknown student short name(s): {', '.join(missing)}")
+            students = [available[name] for name in requested]
+
+          if not students:
+            raise SystemExit('No students parsed from tasks/name_mapping.md')
+
+          github_output = os.environ.get('GITHUB_OUTPUT')
+          if not github_output:
+            raise SystemExit('GITHUB_OUTPUT missing')
+
+          with open(github_output, 'a', encoding='utf-8') as f:
+            f.write(f"lesson_number={lesson_number}\n")
+            f.write(f"lesson_folder={lesson_folder}\n")
+            f.write('students_json<<EOF\n')
+            f.write(json.dumps(students, ensure_ascii=False))
+            f.write('\nEOF\n')
+
+      - name: Delete test discussions and link files
+        shell: python
+        env:
+          TEST_NUMBER: ${{ inputs.test_number }}
+          LESSON_FOLDER: ${{ steps.meta.outputs.lesson_folder }}
+          STUDENTS_JSON: ${{ steps.meta.outputs.students_json }}
+          TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
+        run: |
+          import base64
+          import json
+          import os
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+          import urllib.error
+
+          test_number = os.environ.get('TEST_NUMBER', '').strip()
+          lesson_folder = os.environ.get('LESSON_FOLDER', '').strip()
+          teacher_pat = os.environ.get('TEACHER_PAT', '').strip()
+          students = json.loads(os.environ.get('STUDENTS_JSON', '[]'))
+
+          if not teacher_pat:
+            raise SystemExit('TEACHER_PAT is required')
+          if not test_number or not lesson_folder:
+            raise SystemExit('Missing meta values')
+
+          def gh_request(url: str, *, method: str = 'GET', headers=None, data=None):
+            headers = headers or {}
+            req = urllib.request.Request(
+              url,
+              data=data,
+              method=method,
+              headers={
+                'Authorization': f'Bearer {teacher_pat}',
+                'Accept': 'application/vnd.github+json',
+                **headers,
+              },
+            )
+            try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.status, resp.read()
+            except urllib.error.HTTPError as e:
+              body = e.read() if hasattr(e, 'read') else b''
+              return e.code, body
+
+          def gh_graphql(query: str, variables: dict):
+            url = 'https://api.github.com/graphql'
+            payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
+            status, body = gh_request(
+              url,
+              method='POST',
+              headers={'Content-Type': 'application/json'},
+              data=payload,
+            )
+            if status >= 400:
+              raise RuntimeError(f'GraphQL HTTP {status}: {body[:500]!r}')
+            obj = json.loads(body)
+            if obj.get('errors'):
+              raise RuntimeError(f"GraphQL errors: {obj['errors']}")
+            return obj.get('data') or {}
+
+          def delete_discussion(discussion_id: str) -> bool:
+            q = """
+            mutation($id:ID!) {
+              deleteDiscussion(input:{id:$id}) {
+                clientMutationId
+              }
+            }
+            """
+            try:
+              gh_graphql(q, {'id': discussion_id})
+              return True
+            except Exception as e:
+              msg = str(e)
+              print(f"deleteDiscussion failed: {msg}")
+              return False
+
+          def close_discussion(discussion_id: str) -> bool:
+            q = """
+            mutation($id:ID!) {
+              closeDiscussion(input:{discussionId:$id}) {
+                discussion { id }
+              }
+            }
+            """
+            try:
+              gh_graphql(q, {'id': discussion_id})
+              return True
+            except Exception as e:
+              msg = str(e)
+              print(f"closeDiscussion failed: {msg}")
+              return False
+
+          def get_file(owner: str, repo: str, path: str):
+            url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
+            url = f'https://api.github.com/repos/{owner}/{repo}/contents/{url_path}'
+            status, body = gh_request(url, method='GET')
+            if status == 404:
+              return None
+            if status != 200:
+              raise RuntimeError(f'Failed to GET file {owner}/{repo}/{path}: HTTP {status}: {body[:500]!r}')
+            return json.loads(body)
+
+          def delete_file(owner: str, repo: str, path: str, sha: str, message: str):
+            url_path = '/'.join(urllib.parse.quote(p, safe='') for p in path.split('/'))
+            url = f'https://api.github.com/repos/{owner}/{repo}/contents/{url_path}'
+            payload = {
+              'message': message,
+              'sha': sha,
+            }
+            status, body = gh_request(
+              url,
+              method='DELETE',
+              headers={'Content-Type': 'application/json'},
+              data=json.dumps(payload).encode('utf-8'),
+            )
+            if status not in (200, 204):
+              raise RuntimeError(f'Failed to DELETE file {owner}/{repo}/{path}: HTTP {status}: {body[:500]!r}')
+
+          def parse_meta(text: str) -> dict:
+            keys = [
+              'discussion_node_id',
+              'tracker_discussion_id',
+            ]
+            out = {}
+            for k in keys:
+              m = re.search(rf'^\s*{re.escape(k)}:\s*(.+?)\s*$', text, flags=re.MULTILINE)
+              if m:
+                out[k] = m.group(1).strip()
+              else:
+                out[k] = ''
+            return out
+
+          tracker_discussion_id_seen = ''
+
+          for s in students:
+            short = s.get('short', '').strip()
+            owner = s.get('github', '').strip()
+            repo = 'python2026'
+
+            if not short or not owner:
+              print(f"Skipping invalid student entry: {s!r}")
+              continue
+
+            link_path = f'lessons/{lesson_folder}/tests/test {test_number} {short}.md'
+
+            obj = get_file(owner, repo, link_path)
+            if not obj:
+              print(f"Link file not found. owner={owner} short={short} path={link_path}")
+              continue
+
+            sha = obj.get('sha') or ''
+            encoded = (obj.get('content') or '').encode('utf-8')
+            try:
+              content = base64.b64decode(encoded).decode('utf-8', errors='replace')
+            except Exception:
+              content = ''
+
+            meta = parse_meta(content)
+            discussion_id = (meta.get('discussion_node_id') or '').strip()
+            tracker_id = (meta.get('tracker_discussion_id') or '').strip()
+
+            if tracker_id and not tracker_discussion_id_seen:
+              tracker_discussion_id_seen = tracker_id
+
+            if discussion_id:
+              print(f"Cleaning discussion for {short}: {discussion_id}")
+              ok = delete_discussion(discussion_id)
+              if not ok:
+                ok2 = close_discussion(discussion_id)
+                if not ok2:
+                  print(f"Failed to delete or close discussion for {short}: {discussion_id}")
+            else:
+              print(f"No discussion_node_id found in link file for {short}. Still deleting link file.")
+
+            if sha:
+              delete_file(owner, repo, link_path, sha, f'Remove test link {test_number} ({short})')
+              print(f"Deleted link file for {short}: {link_path}")
+            else:
+              print(f"Missing sha for link file {link_path}. Skipping delete.")
+
+            time.sleep(0.12)
+
+          if tracker_discussion_id_seen:
+            print(f"Cleaning tracker discussion: {tracker_discussion_id_seen}")
+            ok = delete_discussion(tracker_discussion_id_seen)
+            if not ok:
+              ok2 = close_discussion(tracker_discussion_id_seen)
+              if not ok2:
+                print(f"Failed to delete or close tracker discussion: {tracker_discussion_id_seen}")
+
+          print('Done')
