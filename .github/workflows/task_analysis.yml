@@ -17,7 +17,7 @@ on:
         required: false
         type: string
     secrets:
-      OPENROUTER_API_KEY:
+      DEEPSEEK_API_KEY:
         required: true
       TASKS_REPO_TOKEN:
         required: true
@@ -477,59 +477,37 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Run OpenRouter analysis
-        id: openrouter
+        id: deepseek
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         shell: python
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} 
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }} 
           PROMPT: ${{ steps.prompt.outputs.prompt }}
           TEMPERATURE: '0.1'
-          MODELS_FILE_URL: https://raw.githubusercontent.com/Pau1R/python2026/main/misc/openrouter%20models.txt
         run: |
           import json
           import os
           import sys
           import urllib.request
-          from typing import List
 
-          api_key = os.environ.get("OPENROUTER_API_KEY")
+          api_key = os.environ.get("DEEPSEEK_API_KEY")
           prompt = os.environ.get("PROMPT", "")
-          models_file_url = os.environ.get("MODELS_FILE_URL")
-          print(f"DEBUG OPENROUTER: prompt length={len(prompt)}", file=sys.stderr)
-          print("DEBUG OPENROUTER: prompt preview:", file=sys.stderr)
+          print(f"DEBUG DEEPSEEK: prompt length={len(prompt)}", file=sys.stderr)
+          print("DEBUG DEEPSEEK: prompt preview:", file=sys.stderr)
           print(prompt[:800], file=sys.stderr)
           temperature = float(os.environ.get("TEMPERATURE", "0.1"))
 
-          def load_models(url: str) -> List[str]:
-            if not url:
-              return []
-
-            try:
-              with urllib.request.urlopen(url, timeout=30) as resp:
-                text = resp.read().decode("utf-8", errors="ignore")
-            except Exception as exc:  # noqa: BLE001
-              print(f"Failed to load models list from {url}: {exc}", file=sys.stderr)
-              return []
-
-            models: List[str] = []
-            for line in text.splitlines():
-              line = line.strip()
-              if not line or line.startswith("#"):
-                continue
-              models.append(line)
-
-            return models
-
           if not api_key:
-            print("OPENROUTER_API_KEY is required", file=sys.stderr)
+            print("DEEPSEEK_API_KEY is required", file=sys.stderr)
             sys.exit(1)
 
           if not prompt.strip():
             print("PROMPT is empty", file=sys.stderr)
             sys.exit(1)
 
-          def call(model: str):
-            url = "https://openrouter.ai/api/v1/chat/completions"
+          def call_deepseek():
+            url = "https://api.deepseek.com/chat/completions"
+            model = os.environ.get("DEEPSEEK_MODEL", "deepseek-coder")
             data = {
               "model": model,
               "temperature": temperature,
@@ -551,22 +529,21 @@ jobs:
               headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/Pau1R/python2026",
-                "X-Title": "python2026-lesson-task-analysis",
               },
+              method="POST",
             )
 
             try:
               with urllib.request.urlopen(req, timeout=120) as resp:
                 body = resp.read()
             except Exception as exc:  # noqa: BLE001
-              print(f"Error calling OpenRouter with model {model}: {exc}", file=sys.stderr)
+              print(f"Error calling DeepSeek model {model}: {exc}", file=sys.stderr)
               return None
 
             try:
               obj = json.loads(body)
             except Exception as exc:  # noqa: BLE001
-              print(f"Failed to parse OpenRouter response for model {model}: {exc}", file=sys.stderr)
+              print(f"Failed to parse DeepSeek response for model {model}: {exc}", file=sys.stderr)
               return None
 
             choices = obj.get("choices") or []
@@ -577,20 +554,10 @@ jobs:
             content = message.get("content") or ""
             return content.strip()
 
-          models = load_models(models_file_url)
-
-          if not models:
-            print("No models available to call. Check misc/openrouter models.txt", file=sys.stderr)
-            sys.exit(1)
-
-          response = None
-          for model in models:
-            response = call(model)
-            if response:
-              break
+          response = call_deepseek()
 
           if not response:
-            print("Failed to obtain response from OpenRouter", file=sys.stderr)
+            print("Failed to obtain response from DeepSeek", file=sys.stderr)
             sys.exit(1)
 
           github_output = os.environ.get("GITHUB_OUTPUT")
@@ -608,7 +575,7 @@ jobs:
         shell: bash
         env:
           REPORT: ${{ steps.meta.outputs.report }}
-          RESPONSE: ${{ steps.openrouter.outputs.response }}
+          RESPONSE: ${{ steps.deepseek.outputs.response }}
         run: |
           set -euo pipefail
 
