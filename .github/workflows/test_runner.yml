@@ -869,6 +869,41 @@ jobs:
             gh_request("PUT", url, token, data=payload)
 
 
+          def get_file_text(owner: str, repo: str, path: str, token: str):
+            url = gh_contents_url(owner, repo, path)
+            try:
+              _, obj = gh_request("GET", url, token)
+            except Exception:
+              return ""
+
+            if not isinstance(obj, dict):
+              return ""
+
+            content_b64 = obj.get("content")
+            if not isinstance(content_b64, str) or not content_b64:
+              return ""
+
+            try:
+              return base64.b64decode(content_b64).decode("utf-8", errors="ignore")
+            except Exception:
+              return ""
+
+
+          def extract_section_scores(result_md_text: str):
+            mc = re.search(r"Вопросы\s+с\s+выбором\s+варианта:\s*(\d+)\s*/\s*(\d+)%", result_md_text or "")
+            tx = re.search(r"Вопросы\s+с\s+текстовыми\s+ответами:\s*(\d+)\s*/\s*(\d+)%", result_md_text or "")
+
+            mc_score = ""
+            if mc:
+              mc_score = f"{mc.group(1)}/{mc.group(2)}"
+
+            tx_score = ""
+            if tx:
+              tx_score = f"{tx.group(1)}/{tx.group(2)}"
+
+            return mc_score, tx_score
+
+
           def delete_file(owner: str, repo: str, path: str, token: str, message: str):
             url = gh_contents_url(owner, repo, path)
 
@@ -1204,6 +1239,21 @@ jobs:
                   updated_result_md = ai_analysis.strip()
                   put_file(student_github, "python2026", student_result_path, updated_result_md, student_token, f"Update test result {test_number} ({student_short}) with AI analysis")
                   put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, teacher_pat, f"Update test result {test_number} ({student_short}) with AI analysis")
+
+                  # Append test summary to per-lesson results file after AI analysis is finished
+                  try:
+                    mc_score, tx_score = extract_section_scores(updated_result_md)
+                    run_date = time.strftime("%d.%m")
+                    results_path = f"lessons/{lesson_folder}/tests/test_results.md"
+
+                    prev = get_file_text("Pau1R", "python2026_tasks", results_path, teacher_pat)
+                    if prev and not prev.endswith("\n"):
+                      prev += "\n"
+
+                    line = f"{student_short},{mc_score},{tx_score},{run_date}\n"
+                    put_file("Pau1R", "python2026_tasks", results_path, prev + line, teacher_pat, f"Append test summary {test_number} ({student_short})")
+                  except Exception as e:
+                    print(f"Failed to append test summary to test_results.md: {e}")
                   
                   # Update the discussion to show AI analysis is complete
                   try:
