@@ -476,7 +476,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Run OpenRouter analysis
+      - name: Run DeepSeek analysis
         id: deepseek
         if: steps.detect.outputs.skip != 'true' && steps.guard.outputs.skip != 'true'
         shell: python
