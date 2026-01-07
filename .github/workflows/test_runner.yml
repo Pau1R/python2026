@@ -282,8 +282,8 @@ jobs:
 
           if not student_token:
             raise SystemExit("STUDENT_TOKEN is required")
-          if not teacher_pat:
-            raise SystemExit("TEACHER_PAT is required")
+          if not tasks_repo_token:
+            raise SystemExit("TASKS_REPO_TOKEN is required")
           if not tasks_repo_classic_token:
             raise SystemExit("TASKS_REPO_CLASSIC_TOKEN is required")
 
