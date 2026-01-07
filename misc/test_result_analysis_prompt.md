@@ -23,8 +23,7 @@ Multiple-choice questions (questions that contain a "Варианты ответ
 - If the file already indicates the correct option (for example with ✅), treat that as the ground truth.
 
 Formatting rule (important for GitHub):
-- Write the analysis as multiple short lines.
-- End EACH line with two spaces "  " to force a line break in GitHub Markdown.
+- If you write the analysis across multiple lines, end EACH line with two spaces "  " to force a line break in GitHub Markdown.
 
 For EVERY text question, also update the text answer title:
 - Find the line "### Ответ" within that question block
@@ -48,11 +47,21 @@ If the file contains text questions:
    - Hard rule: Y + B MUST equal 100
    - Since you must not change multiple-choice scores, treat Y as ground truth and set:
      - B = 100 - Y
-   - A = percent earned from text questions, computed from points and scaled to B
+   - A = percent earned from text questions, computed from text answers and scaled to B
    - Both A and B are percentages of the whole test (not raw points)
 
+  How to compute A (choose the first applicable method):
+  1) If the file contains explicit numeric points for each text question (for example lines like "Баллы: a/b", "Оценка: a/b", or a clear total for text points):
+     - Use those points as ground truth.
+     - Compute text_fraction = (text_earned_points / text_max_points).
+  2) Otherwise (no explicit points in the file), derive points from your own rating label for each text question:
+     - 🔴 = 0.0
+     - 🟡 = 0.5
+     - 🟢 = 1.0
+     - Let text_fraction = (sum of these values across all text questions) / (number of text questions)
+     - Then compute A from text_fraction.
+
   Formula:
-  - text_fraction = text_earned_points / text_max_points
   - A = round(text_fraction * B)
 
   Consistency check (must hold in output):
