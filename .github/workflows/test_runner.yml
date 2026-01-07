@@ -3,7 +3,7 @@ name: Centralized Test Runner
 on:
   workflow_call:
     secrets:
-      TEACHER_PAT:
+      TASKS_REPO_TOKEN:
         required: true
       DEEPSEEK_API_KEY:
         required: true
@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Pau1R/python2026_tasks
-          token: ${{ secrets.TEACHER_PAT }}
+          token: ${{ secrets.TASKS_REPO_TOKEN }}
           path: tasks
 
       - name: Resolve test metadata
@@ -176,7 +176,7 @@ jobs:
         shell: python
         env:
           STUDENT_TOKEN: ${{ github.token }}
-          TEACHER_PAT: ${{ secrets.TEACHER_PAT }}
+          TASKS_REPO_TOKEN: ${{ secrets.TASKS_REPO_TOKEN }}
           TASKS_REPO_CLASSIC_TOKEN: ${{ secrets.TASKS_REPO_CLASSIC_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DISCUSSION_NODE_ID: ${{ steps.meta.outputs.discussion_node_id }}
@@ -263,7 +263,7 @@ jobs:
 
 
           student_token = os.environ.get("STUDENT_TOKEN", "")
-          teacher_pat = os.environ.get("TEACHER_PAT", "")
+          tasks_repo_token = os.environ.get("TASKS_REPO_TOKEN", "")
           tasks_repo_classic_token = os.environ.get("TASKS_REPO_CLASSIC_TOKEN", "")
           deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
@@ -308,7 +308,7 @@ jobs:
 
 
           def gh_graphql_teacher(query: str, variables: dict):
-            return gh_graphql(query, variables, teacher_pat)
+            return gh_graphql(query, variables, tasks_repo_token)
 
 
           def gh_graphql_classic(query: str, variables: dict):
@@ -912,12 +912,12 @@ jobs:
             run_date = time.strftime("%d.%m")
             results_path = f"lessons/{lesson_folder}/tests/test_results.md"
 
-            prev = get_file_text("Pau1R", "python2026_tasks", results_path, teacher_pat)
+            prev = get_file_text("Pau1R", "python2026_tasks", results_path, tasks_repo_token)
             if prev and not prev.endswith("\n"):
               prev += "\n"
 
             line = f"{student_short},{mc_score},{tx_score},{run_date}\n"
-            put_file("Pau1R", "python2026_tasks", results_path, prev + line, teacher_pat, f"Append test summary {test_number} ({student_short})")
+            put_file("Pau1R", "python2026_tasks", results_path, prev + line, tasks_repo_token, f"Append test summary {test_number} ({student_short})")
 
 
           def delete_file(owner: str, repo: str, path: str, token: str, message: str):
@@ -1199,7 +1199,7 @@ jobs:
           tasks_result_path = student_result_path
 
           put_file(student_github, "python2026", student_result_path, result_md, student_token, f"Add test result {test_number} ({student_short})")
-          put_file("Pau1R", "python2026_tasks", tasks_result_path, result_md, teacher_pat, f"Add test result {test_number} ({student_short})")
+          put_file("Pau1R", "python2026_tasks", tasks_result_path, result_md, tasks_repo_token, f"Add test result {test_number} ({student_short})")
 
           result_link = build_result_link(student_github, "python2026", student_result_path)
 
@@ -1228,7 +1228,7 @@ jobs:
             try:
               # Load the analysis prompt
               analysis_prompt_url = gh_contents_url("Pau1R", "python2026", "misc/test_result_analysis_prompt.md")
-              _, analysis_prompt_data = gh_request("GET", analysis_prompt_url, teacher_pat)
+              _, analysis_prompt_data = gh_request("GET", analysis_prompt_url, tasks_repo_token)
               if analysis_prompt_data and "content" in analysis_prompt_data:
                 import base64
                 analysis_prompt = base64.b64decode(analysis_prompt_data["content"]).decode('utf-8')
@@ -1254,7 +1254,7 @@ jobs:
                   # Update result files with AI analysis
                   updated_result_md = ai_analysis.strip()
                   put_file(student_github, "python2026", student_result_path, updated_result_md, student_token, f"Update test result {test_number} ({student_short}) with AI analysis")
-                  put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, teacher_pat, f"Update test result {test_number} ({student_short}) with AI analysis")
+                  put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, tasks_repo_token, f"Update test result {test_number} ({student_short}) with AI analysis")
                   
                   # Update the discussion to show AI analysis is complete
                   try:
