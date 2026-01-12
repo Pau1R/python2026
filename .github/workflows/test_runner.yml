@@ -579,6 +579,8 @@ jobs:
             lines.append("")
             lines.append("Ответьте на вопрос обычным комментарием.")
             lines.append("")
+            lines.append("- [ ] Завершить тест досрочно")
+            lines.append("")
             lines.append(f"Вопрос {done + 1}/{total}")
             return "\n".join(lines).rstrip() + "\n"
 
@@ -640,7 +642,17 @@ jobs:
               if time.time() >= hard_deadline_ts:
                 raise TimeLimitReached("Hard workflow time limit reached")
               disc = get_discussion()
+              body = disc.get("body") or ""
               comments = (((disc.get("comments") or {}).get("nodes")) or [])
+              
+              # Check if finish checkbox was selected
+              for line in body.splitlines():
+                if line.lstrip().startswith("- [x]") or line.lstrip().startswith("- [X]"):
+                  rest = line.split("]", 1)[-1].strip()
+                  if rest.startswith("Завершить тест"):
+                    return "finish", None
+              
+              # Look for text answer in comments
               for c in reversed(comments):
                 author = ((c.get("author") or {}).get("login")) or ""
                 if teacher_marker_login and author == teacher_marker_login:
@@ -795,7 +807,7 @@ jobs:
               lines.append("  ")
 
               if entry.get("finished"):
-                lines.append("Finished early")
+                lines.append("Тест завершен досрочно")
                 lines.append("  ")
                 continue
 
@@ -1068,7 +1080,21 @@ jobs:
 
               try:
                 enforce_deadline()
-                ans, comment_id = wait_for_text_answer(int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
+                result = wait_for_text_answer(int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
+                
+                # Check if student wants to finish early
+                if result[0] == "finish":
+                  if confirm_finish(page):
+                    answers_log.append({"question": q_text, "finished": True, "max_points": q.get("max_points", 1)})
+                    finished_early = True
+                    break
+                  else:
+                    # Continue with the question after declining to finish
+                    enforce_deadline()
+                    result = wait_for_text_answer(int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
+                
+                ans, comment_id = result[0], result[1]
+                
               except TimeLimitReached:
                 answers_log.append({"question": q_text, "finished": True, "reason": "time_limit", "max_points": q.get("max_points", 1)})
                 finished_early = True
