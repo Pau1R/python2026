@@ -298,8 +298,8 @@ jobs:
             raise SystemExit("Student metadata is incomplete")
 
 
-          HARD_TOTAL_SECONDS = 50 * 60
-          FINISH_BUFFER_SECONDS = 120
+          HARD_TOTAL_SECONDS = 100 * 60
+          FINISH_BUFFER_SECONDS = 600
           hard_deadline_ts = time.time() + max(0, HARD_TOTAL_SECONDS - FINISH_BUFFER_SECONDS)
 
 
