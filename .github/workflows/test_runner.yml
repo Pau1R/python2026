@@ -1367,17 +1367,17 @@ jobs:
                 put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, tasks_repo_token, f"Update test result {test_number} ({student_short}) with AI analysis")
                   
                   # Update the discussion to show AI analysis is complete
-                  try:
-                    disc = get_discussion()
-                    comments = (((disc.get("comments") or {}).get("nodes")) or [])
-                    for c in comments:
-                      if "ИИ анализ" in c.get("body", "") and "spinner" in c.get("body", ""):
-                        comment_id = c.get("id")
-                        if comment_id:
-                          update_comment(comment_id, "### ИИ анализ ✅")
-                          break
-                  except Exception:
-                    pass
+                try:
+                  disc = get_discussion()
+                  comments = (((disc.get("comments") or {}).get("nodes")) or [])
+                  for c in comments:
+                    if "ИИ анализ" in c.get("body", "") and "spinner" in c.get("body", ""):
+                      comment_id = c.get("id")
+                      if comment_id:
+                        update_comment(comment_id, "### ИИ анализ ✅")
+                        break
+                except Exception:
+                  pass
             except Exception as e:
               print(f"AI analysis failed: {e}")
 
