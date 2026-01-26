@@ -1003,12 +1003,86 @@ jobs:
             if not choices:
               return None
 
-            message = choices[0].get("message") or {}
-            content = (message.get("content") or "").strip()
-            if content:
-              return content
+            return (obj.get("choices") or [{}])[0].get("message", {}).get("content", "")
 
-            return None
+
+          def estimate_tokens(text: str) -> int:
+            if not text:
+              return 0
+            # Overestimate on purpose to keep chunks safely below the limit.
+            # Roughly ~3 chars per token plus a small overhead per line.
+            base = max(1, (len(text) + 2) // 3)
+            overhead = max(0, text.count("\n") // 2)
+            return base + overhead
+
+
+          def split_result_markdown_into_parts(result_md: str, max_tokens: int) -> list[str]:
+            if not result_md:
+              return [""]
+
+            if estimate_tokens(result_md) <= max_tokens:
+              return [result_md]
+
+            lines = result_md.splitlines(keepends=True)
+
+            blocks: list[str] = []
+            current: list[str] = []
+            for line in lines:
+              if line.startswith("# ") and ("Вопрос" in line):
+                if current:
+                  blocks.append("".join(current))
+                current = [line]
+              else:
+                current.append(line)
+            if current:
+              blocks.append("".join(current))
+
+            if len(blocks) <= 1:
+              return [result_md]
+
+            parts: list[str] = []
+            buf = ""
+            for block in blocks:
+              if estimate_tokens(block) > max_tokens:
+                paras = block.split("\n\n")
+                tmp = ""
+                for p in paras:
+                  candidate = (tmp + ("\n\n" if tmp else "") + p)
+                  if estimate_tokens(candidate) <= max_tokens:
+                    tmp = candidate
+                    continue
+                  if tmp:
+                    parts.append(tmp.rstrip() + "\n")
+                    tmp = p
+                  else:
+                    approx_chars = max_tokens * 4
+                    for i in range(0, len(p), approx_chars):
+                      parts.append(p[i:i + approx_chars])
+                    tmp = ""
+                if tmp:
+                  parts.append(tmp.rstrip() + "\n")
+                continue
+
+              candidate = buf + block
+              if buf and estimate_tokens(candidate) > max_tokens:
+                parts.append(buf)
+                buf = block
+              else:
+                buf = candidate
+            if buf:
+              parts.append(buf)
+
+            return parts
+
+
+          def analyze_result_markdown(result_md: str) -> str:
+            parts = split_result_markdown_into_parts(result_md, 4000)
+            analyzed_parts = []
+            for part in parts:
+              ai_text = call_deepseek(part)
+              if ai_text:
+                analyzed_parts.append(ai_text)
+            return "\n\n".join(analyzed_parts)
 
 
           questions, config = load_test_json()
@@ -1259,29 +1333,38 @@ jobs:
               if analysis_prompt_data and "content" in analysis_prompt_data:
                 import base64
                 analysis_prompt = base64.b64decode(analysis_prompt_data["content"]).decode('utf-8')
-                
-                # Prepare the analysis request
-                analysis_payload = {
-                  "result_file": result_md,
-                  "prompt": analysis_prompt
-                }
-                
-                # Call AI for analysis
-                ai_analysis_prompt = f"""Analyze the following test results using the provided prompt:
+
+                parts = split_result_markdown_into_parts(result_md, max_tokens=4000)
+
+                analyzed_parts: list[str] = []
+                for part_idx, part_md in enumerate(parts, start=1):
+                  part_header = f"CHUNK {part_idx}/{len(parts)}"
+
+                  ai_analysis_prompt = f"""You will analyze a PART of a student's test result markdown and fill in the AI analysis sections.
+
+                  Rules:
+                  1) You MUST keep all content unchanged except AI analysis sections.
+                  2) Wherever you see the header line starting with '### ИИ анализ' (including the loading gif), replace it with:
+                    ### ИИ анализ
+                    <your analysis text>
+                  3) Do not remove questions, answers, scores, or formatting.
+                  4) Return ONLY the updated markdown for this chunk.
+
+                  {part_header}
 
                   PROMPT:
                   {analysis_prompt}
 
-                  TEST RESULTS:
-                  {result_md}"""
+                  TEST RESULTS (CHUNK ONLY):
+                  {part_md}"""
 
-                ai_analysis = call_deepseek(ai_analysis_prompt)
-                
-                if ai_analysis:
-                  # Update result files with AI analysis
-                  updated_result_md = ai_analysis.strip()
-                  put_file(student_github, "python2026", student_result_path, updated_result_md, student_token, f"Update test result {test_number} ({student_short}) with AI analysis")
-                  put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, tasks_repo_token, f"Update test result {test_number} ({student_short}) with AI analysis")
+                  ai_analysis = call_deepseek(ai_analysis_prompt)
+                  analyzed_parts.append((ai_analysis or part_md).rstrip() + "\n")
+
+                updated_result_md = "".join(analyzed_parts).rstrip() + "\n"
+
+                put_file(student_github, "python2026", student_result_path, updated_result_md, student_token, f"Update test result {test_number} ({student_short}) with AI analysis")
+                put_file("Pau1R", "python2026_tasks", tasks_result_path, updated_result_md, tasks_repo_token, f"Update test result {test_number} ({student_short}) with AI analysis")
                   
                   # Update the discussion to show AI analysis is complete
                   try:
