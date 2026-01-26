@@ -1342,21 +1342,21 @@ jobs:
 
                   ai_analysis_prompt = f"""You will analyze a PART of a student's test result markdown and fill in the AI analysis sections.
 
-                  Rules:
-                  1) You MUST keep all content unchanged except AI analysis sections.
-                  2) Wherever you see the header line starting with '### ИИ анализ' (including the loading gif), replace it with:
-                    ### ИИ анализ
-                    <your analysis text>
-                  3) Do not remove questions, answers, scores, or formatting.
-                  4) Return ONLY the updated markdown for this chunk.
+Rules:
+1) You MUST keep all content unchanged except AI analysis sections.
+2) Wherever you see the header line starting with '### ИИ анализ' (including the loading gif), replace it with:
+   ### ИИ анализ
+   <your analysis text>
+3) Do not remove questions, answers, scores, or formatting.
+4) Return ONLY the updated markdown for this chunk.
 
-                  {part_header}
+{part_header}
 
-                  PROMPT:
-                  {analysis_prompt}
+PROMPT:
+{analysis_prompt}
 
-                  TEST RESULTS (CHUNK ONLY):
-                  {part_md}"""
+TEST RESULTS (CHUNK ONLY):
+{part_md}"""
 
                   ai_analysis = call_deepseek(ai_analysis_prompt)
                   analyzed_parts.append((ai_analysis or part_md).rstrip() + "\n")
