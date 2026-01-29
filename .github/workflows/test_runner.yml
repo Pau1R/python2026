@@ -549,6 +549,7 @@ jobs:
             perm = list(range(len(options)))
             random.shuffle(perm)
             shuffled = [options[i] for i in perm]
+            dont_know_index = len(options) + 1
 
             lines = []
             lines.append(question_text.strip())
@@ -564,13 +565,13 @@ jobs:
               else:
                 lines.append(f"- [ ] {idx}. {opt}")
 
-            lines.append(f"- [ ] 6. Я не знаю ответа")
+            lines.append(f"- [ ] {dont_know_index}. Я не знаю ответа")
             lines.append("")
             lines.append(f"Вопрос {done + 1}/{total}")
             lines.append("")
             lines.append("- [ ] Завершить тест досрочно")
 
-            return "\n".join(lines).rstrip() + "\n", perm, shuffled
+            return "\n".join(lines).rstrip() + "\n", perm, shuffled, dont_know_index
 
 
           def render_text_page(question_text: str, done: int, total: int):
@@ -666,7 +667,7 @@ jobs:
             raise TimeoutError("Timeout waiting for text answer")
 
 
-          def wait_for_buttons_answer(expected_template: str, timeout_seconds: int):
+          def wait_for_buttons_answer(expected_template: str, max_choice: int, timeout_seconds: int):
             start = time.time()
             while time.time() - start < timeout_seconds:
               if time.time() >= hard_deadline_ts:
@@ -687,12 +688,12 @@ jobs:
 
               if selected:
                 uniq = sorted(set(selected))
-                if any(x < 1 or x > 6 for x in uniq):
+                if any(x < 1 or x > max_choice for x in uniq):
                   update_discussion_body(discussion_id, expected_template)
                   time.sleep(1)
                   continue
 
-                if 6 in uniq and len(uniq) > 1:
+                if max_choice in uniq and len(uniq) > 1:
                   update_discussion_body(discussion_id, expected_template)
                   time.sleep(1)
                   continue
@@ -831,12 +832,15 @@ jobs:
                 lines.append("Варианты ответов:")
                 selected = entry.get("selected", [])
                 shown_options = entry.get("options") or []
-                if isinstance(shown_options, list) and len(shown_options) == 5:
+                if isinstance(shown_options, list) and shown_options:
+                  dont_know_index = len(shown_options) + 1
                   for idx_opt, option in enumerate(shown_options, start=1):
                     if idx_opt in selected:
                       lines.append(f"{idx_opt}) {status} {option}")
                     else:
                       lines.append(f"{idx_opt}) {option}")
+                  if dont_know_index in selected:
+                    lines.append(f"{dont_know_index}) {status} Я не знаю ответа")
                 else:
                   lines.append(f"Selected: {selected}")
                 lines.append("  ")
@@ -1201,17 +1205,17 @@ jobs:
 
             options = q.get("options")
             answers = q.get("answers")
-            if not isinstance(options, list) or len(options) != 5:
-              raise SystemExit("Buttons mode question must have 5 options")
-            if not isinstance(answers, list) or len(answers) != 5:
-              raise SystemExit("Buttons mode question must have 5 answers")
+            if not isinstance(options, list) or not options:
+              raise SystemExit("Buttons mode question must have non-empty options")
+            if not isinstance(answers, list) or len(answers) != len(options):
+              raise SystemExit("Buttons mode question must have answers list with same length as options")
 
-            template, perm, shuffled_options = render_buttons_page(q_text, options, i, total)
+            template, perm, shuffled_options, dont_know_index = render_buttons_page(q_text, options, i, total)
             update_discussion_body(discussion_id, template)
 
             try:
               enforce_deadline()
-              kind, selected = wait_for_buttons_answer(template, int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
+              kind, selected = wait_for_buttons_answer(template, dont_know_index, int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
             except TimeLimitReached:
               answers_log.append({"question": q_text, "finished": True, "reason": "time_limit", "max_points": q.get("max_points", 1)})
               finished_early = True
@@ -1233,7 +1237,7 @@ jobs:
                 finished_early = True
                 break
               enforce_deadline()
-              kind, selected = wait_for_buttons_answer(template, int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
+              kind, selected = wait_for_buttons_answer(template, dont_know_index, int(min(45 * 60, max(1, effective_deadline_ts - time.time()))))
 
             selected = selected or []
 
@@ -1244,10 +1248,10 @@ jobs:
             inv_perm = {orig_idx: shown_idx for shown_idx, orig_idx in enumerate(perm)}
             correct_shown = sorted([inv_perm[idx] + 1 for idx in correct_original if idx in inv_perm])
 
-            if selected == [6]:
+            if selected == [dont_know_index]:
               points = 0.2 * max_points  # Scale partial points by max_points
             else:
-              selected_original = sorted({perm[x - 1] for x in selected if 1 <= x <= 5})
+              selected_original = sorted({perm[x - 1] for x in selected if 1 <= x <= len(options)})
               if selected_original == sorted(correct_original):
                 points = max_points  # Full points
               else:
@@ -1269,7 +1273,7 @@ jobs:
             }
             answers_log.append(entry)
 
-            if points < 1.0 and selected != [6]:
+            if points < max_points and selected != [dont_know_index]:
               wrong_for_ai.append({"kind": "mc", "question": q_text, "selected": selected, "correct": correct_shown, "options": shuffled_options})
 
             update_tracker_progress(i + 1, total)
