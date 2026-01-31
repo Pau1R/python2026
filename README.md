@@ -3,3 +3,5 @@
 
 
 gif animations: https://lottiefiles.com/free-animations/dots-dots
+
+[Шпаргалка по python](https://labex.io/pythoncheatsheet/ru/cheatsheet/oop-basics)
