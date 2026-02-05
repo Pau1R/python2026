@@ -104,6 +104,11 @@ jobs:
             if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework)(/|$) ]]; then
               CURRENT_MODE="homework"
               CURRENT_DIR="${BASH_REMATCH[1]}"
+              
+              # Check if file is in a subdirectory like homework/1/
+              if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework/[^/]+)(/|$) ]]; then
+                CURRENT_DIR="${BASH_REMATCH[1]}"
+              fi
 
             elif [[ "$FILE_PATH" =~ ^(lessons/[^/]+/tasks/[^/]+)(/|$) ]]; then
               CURRENT_MODE="task"
@@ -288,7 +293,29 @@ jobs:
           REMOTE_DIR="lessons/$REL_WITH_LESSON"
 
           if [[ "$MODE" == "homework" ]]; then
-            DESCRIPTION="$DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md"
+            # Try to find description file in the homework directory or its subdirectories
+            DESCRIPTION=""
+            
+            # First try the direct path (old format)
+            if [[ -f "$DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md" ]]; then
+              DESCRIPTION="$DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md"
+            # Then try subdirectories (new format)
+            else
+              shopt -s nullglob
+              for SUBDIR in "$DIR_STRIPPED"/*; do
+                if [[ -d "$SUBDIR" && -f "$SUBDIR/homework ${LESSON_NUM} ${STUDENT}.md" ]]; then
+                  DESCRIPTION="$SUBDIR/homework ${LESSON_NUM} ${STUDENT}.md"
+                  break
+                fi
+              done
+              shopt -u nullglob
+            fi
+            
+            if [[ -z "$DESCRIPTION" ]]; then
+              echo "Description file does not exist: $DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md or in subdirectories" >&2
+              exit 1
+            fi
+            
             REPORT_NAME="homework ${LESSON_NUM} ${STUDENT} result.md"
             REPORT_PATH="$DIR_STRIPPED/$REPORT_NAME"
           elif [[ "$MODE" == "task" ]]; then
