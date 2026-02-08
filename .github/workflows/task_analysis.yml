@@ -296,23 +296,46 @@ jobs:
             # Try to find description file in the homework directory or its subdirectories
             DESCRIPTION=""
             
-            # First try the direct path (old format)
-            if [[ -f "$DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md" ]]; then
-              DESCRIPTION="$DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md"
-            # Then try subdirectories (new format)
-            else
+            # First try the basic pattern without number
+            BASIC_PATTERN="$DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md"
+            if [[ -f "$BASIC_PATTERN" ]]; then
+              DESCRIPTION="$BASIC_PATTERN"
+            fi
+            
+            # If not found, try patterns with .1, .2, .3, etc.
+            if [[ -z "$DESCRIPTION" ]]; then
               shopt -s nullglob
-              for SUBDIR in "$DIR_STRIPPED"/*; do
-                if [[ -d "$SUBDIR" && -f "$SUBDIR/homework ${LESSON_NUM} ${STUDENT}.md" ]]; then
-                  DESCRIPTION="$SUBDIR/homework ${LESSON_NUM} ${STUDENT}.md"
+              
+              # Try direct path first
+              for FILE in "$DIR_STRIPPED"/homework\ ${LESSON_NUM}.[0-9]*\ ${STUDENT}.md; do
+                if [[ -f "$FILE" ]]; then
+                  DESCRIPTION="$FILE"
                   break
                 fi
               done
+              
+              # Then try subdirectories
+              if [[ -z "$DESCRIPTION" ]]; then
+                for SUBDIR in "$DIR_STRIPPED"/*; do
+                  if [[ -d "$SUBDIR" ]]; then
+                    for FILE in "$SUBDIR"/homework\ ${LESSON_NUM}.[0-9]*\ ${STUDENT}.md; do
+                      if [[ -f "$FILE" ]]; then
+                        DESCRIPTION="$FILE"
+                        break 2
+                      fi
+                    done
+                  fi
+                done
+              fi
+              
               shopt -u nullglob
             fi
             
             if [[ -z "$DESCRIPTION" ]]; then
-              echo "Description file does not exist: $DIR_STRIPPED/homework ${LESSON_NUM} ${STUDENT}.md or in subdirectories" >&2
+              echo "Description file does not exist. Tried:" >&2
+              echo "  $BASIC_PATTERN" >&2
+              echo "  $DIR_STRIPPED/homework ${LESSON_NUM}.[N] ${STUDENT}.md" >&2
+              echo "And in subdirectories of: $DIR_STRIPPED" >&2
               exit 1
             fi
             
