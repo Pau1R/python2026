@@ -464,17 +464,17 @@ jobs:
                 echo "DEBUG CONTENT: file not found on disk: '$FILE'" >&2
               fi
             done <<< "$FILES"
-            echo "${SOLUTION_DELIM}"
+            echo "${SOLUTION_DELIM}" >> "$GITHUB_OUTPUT"
 
-            echo "description<<${DESCRIPTION_DELIM}"
+            echo "description<<${DESCRIPTION_DELIM}" >> "$GITHUB_OUTPUT"
             if [[ -f "$DESCRIPTION" ]]; then
-              cat "$DESCRIPTION" || true
+              cat "$DESCRIPTION" >> "$GITHUB_OUTPUT" || true
             else
               echo "Description file not found: $DESCRIPTION" >&2
-              echo "(missing description file: $DESCRIPTION)"
+              echo "(missing description file: $DESCRIPTION)" >> "$GITHUB_OUTPUT"
             fi
-            echo "${DESCRIPTION_DELIM}"
-          } >> "$GITHUB_OUTPUT"
+            echo "${DESCRIPTION_DELIM}" >> "$GITHUB_OUTPUT"
+          }
 
       - name: Load analysis template
         id: template
