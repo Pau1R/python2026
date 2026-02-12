@@ -447,7 +447,7 @@ jobs:
           DESCRIPTION_DELIM="EOF_DESCRIPTION_$(date +%s%N)"
 
           {
-            echo "solution<<${SOLUTION_DELIM}"
+            echo "solution<<${SOLUTION_DELIM}" >> "$GITHUB_OUTPUT"
             echo "DEBUG CONTENT: FILES raw:" >&2
             printf '%s\n' "$FILES" >&2
 
@@ -456,10 +456,10 @@ jobs:
               [[ -z "$FILE" ]] && continue
               echo "DEBUG CONTENT: processing FILE='$FILE'" >&2
               if [[ -f "$FILE" ]]; then
-                echo "### $FILE"
-                echo
-                cat "$FILE" || true
-                echo
+                echo "### $FILE" >> "$GITHUB_OUTPUT"
+                echo >> "$GITHUB_OUTPUT"
+                cat "$FILE" >> "$GITHUB_OUTPUT" || true
+                echo >> "$GITHUB_OUTPUT"
               else
                 echo "DEBUG CONTENT: file not found on disk: '$FILE'" >&2
               fi
