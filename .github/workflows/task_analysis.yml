@@ -448,9 +448,7 @@ jobs:
 
           {
             echo "solution<<${SOLUTION_DELIM}" >> "$GITHUB_OUTPUT"
-            echo "DEBUG CONTENT: FILES raw:" >&2
-            printf '%s\n' "$FILES" >&2
-
+            
             while IFS= read -r FILE; do
               FILE="${FILE//$'\r'/}"  # strip CR if any
               [[ -z "$FILE" ]] && continue
@@ -464,14 +462,17 @@ jobs:
                 echo "DEBUG CONTENT: file not found on disk: '$FILE'" >&2
               fi
             done <<< "$FILES"
+            echo >> "$GITHUB_OUTPUT"
             echo "${SOLUTION_DELIM}" >> "$GITHUB_OUTPUT"
 
             echo "description<<${DESCRIPTION_DELIM}" >> "$GITHUB_OUTPUT"
             if [[ -f "$DESCRIPTION" ]]; then
               cat "$DESCRIPTION" >> "$GITHUB_OUTPUT" || true
+              echo >> "$GITHUB_OUTPUT"
             else
               echo "Description file not found: $DESCRIPTION" >&2
               echo "(missing description file: $DESCRIPTION)" >> "$GITHUB_OUTPUT"
+              echo >> "$GITHUB_OUTPUT"
             fi
             echo "${DESCRIPTION_DELIM}" >> "$GITHUB_OUTPUT"
           }
