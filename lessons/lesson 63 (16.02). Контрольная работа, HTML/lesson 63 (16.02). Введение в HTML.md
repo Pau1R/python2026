@@ -1,0 +1,2 @@
+Ссылка на материал:
+1) https://storage.yandexcloud.net/top-academy-services-omni/materials/WTEwZweL088YYY5IbFWVG4h240CRMhot.pdf?response-content-disposition=inline%3B%20filename%3D%22SC_HTML_urok_01_1536052899.pdf%22
