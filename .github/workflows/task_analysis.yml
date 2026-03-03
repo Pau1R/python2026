@@ -104,15 +104,20 @@ jobs:
             if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework)(/|$) ]]; then
               CURRENT_MODE="homework"
               CURRENT_DIR="${BASH_REMATCH[1]}"
+              echo "DEBUG: Detected homework pattern for FILE_PATH='$FILE_PATH'" >&2
+              echo "DEBUG: CURRENT_DIR='$CURRENT_DIR'" >&2
               
               # Check if file is in a subdirectory like homework/1/
               if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework/[^/]+)(/|$) ]]; then
                 CURRENT_DIR="${BASH_REMATCH[1]}"
+                echo "DEBUG: Updated to subdirectory CURRENT_DIR='$CURRENT_DIR'" >&2
               fi
 
             elif [[ "$FILE_PATH" =~ ^(lessons/[^/]+/tasks/[^/]+)(/|$) ]]; then
               CURRENT_MODE="task"
               CURRENT_DIR="${BASH_REMATCH[1]}"
+              echo "DEBUG: Detected task pattern for FILE_PATH='$FILE_PATH'" >&2
+              echo "DEBUG: CURRENT_DIR='$CURRENT_DIR'" >&2
 
               if [[ "$FILE_PATH" =~ task_([0-9]{1,2}) ]]; then
                 CURRENT_TASK="${BASH_REMATCH[1]}"
@@ -140,7 +145,11 @@ jobs:
               MODE="$CURRENT_MODE"
               TASK="$CURRENT_TASK"
               SOLUTION_DIR="$CURRENT_DIR"
+              echo "DEBUG: First file - setting MODE='$MODE', TASK='$TASK', SOLUTION_DIR='$SOLUTION_DIR'" >&2
             else
+              echo "DEBUG: Processing subsequent file - CURRENT_MODE='$CURRENT_MODE', CURRENT_TASK='$CURRENT_TASK', CURRENT_DIR='$CURRENT_DIR'" >&2
+              echo "DEBUG: Comparing with stored MODE='$MODE', TASK='$TASK', SOLUTION_DIR='$SOLUTION_DIR'" >&2
+              
               if [[ "$MODE" != "$CURRENT_MODE" ]]; then
                 echo "Found both homework and task submissions. Skipping analysis."
                 echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -154,6 +163,12 @@ jobs:
               fi
 
               if [[ "$SOLUTION_DIR" != "$CURRENT_DIR" ]]; then
+                echo "DEBUG: Solution directory mismatch detected" >&2
+                echo "DEBUG: SOLUTION_DIR='$SOLUTION_DIR'" >&2
+                echo "DEBUG: CURRENT_DIR='$CURRENT_DIR'" >&2
+                echo "DEBUG: FILE_PATH='$FILE_PATH'" >&2
+                echo "DEBUG: All matched files so far:" >&2
+                printf '%s\n' "${MATCHED[@]}" >&2
                 echo "Solution files live in different directories. Skipping analysis."
                 echo "skip=true" >> "$GITHUB_OUTPUT"
                 exit 0
