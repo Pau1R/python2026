@@ -107,8 +107,8 @@ jobs:
               echo "DEBUG: Detected homework pattern for FILE_PATH='$FILE_PATH'" >&2
               echo "DEBUG: CURRENT_DIR='$CURRENT_DIR'" >&2
               
-              # Check if file is in a subdirectory like homework/1/
-              if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework/[^/]+)(/|$) ]]; then
+              # Check if file is in a subdirectory like homework/1/ (only if there's another directory level)
+              if [[ "$FILE_PATH" =~ ^(lessons/[^/]+/homework/[^/]+)/[^/]+$ ]]; then
                 CURRENT_DIR="${BASH_REMATCH[1]}"
                 echo "DEBUG: Updated to subdirectory CURRENT_DIR='$CURRENT_DIR'" >&2
               fi
